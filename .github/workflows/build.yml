@@ -1,0 +1,55 @@
+name: Build EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install grpcio grpcio-tools pywebview pyinstaller
+
+      - name: Build
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name "RelicPicker_v5" `
+            --add-data "static;static" `
+            --add-data "proto;proto" `
+            --add-data "ae_names.json;." `
+            --hidden-import grpc `
+            --hidden-import pywebview `
+            --hidden-import internal_pb2 `
+            --hidden-import internal_pb2_grpc `
+            --hidden-import soapstone_pb2 `
+            --hidden-import soapstone_pb2_grpc `
+            --hidden-import common_pb2 `
+            --hidden-import common_pb2_grpc `
+            --collect-all grpc `
+            --collect-all google `
+            --collect-all pywebview `
+            main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RelicPicker_v5
+          path: dist/RelicPicker_v5.exe
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/RelicPicker_v5.exe

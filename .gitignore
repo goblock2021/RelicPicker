@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+loader_cache.json
+settings.json
+relic_box.json
+*.egg-info/
+.env
+.claude

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relic Picker v5</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- SVG ICON SPRITES -->
+<svg style="display:none" aria-hidden="true">
+  <defs>
+    <g id="icon-star"><path d="M12 2l3 6.5 7 .8-5 4.7 1.5 7L12 17l-6.5 3.8L7 13.3 2 8.6l7-.8z"/></g>
+    <g id="icon-star-filled"><path d="M12 2l3 6.5 7 .8-5 4.7 1.5 7L12 17l-6.5 3.8L7 13.3 2 8.6l7-.8z" fill="currentColor"/></g>
+    <g id="icon-refresh"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></g>
+    <g id="icon-box"><path d="M4 8h16V7l-2-4H6L4 7v1zm0 2v10a2 2 0 002 2h12a2 2 0 002-2V10H4z"/></g>
+    <g id="icon-download"><path d="M13 5v6h3l-4 4-4-4h3V5h2zM5 18v2h14v-2H5z"/></g>
+    <g id="icon-upload"><path d="M11 15h2v-6h3l-4-4-4 4h3v6zm-6 3v2h14v-2H5z"/></g>
+    <g id="icon-batch"><path d="M7 5v14l12-7L7 5z"/></g>
+    <g id="icon-close"><path d="M17.6 7.4L15.6 5.4 12 9 8.4 5.4 6.4 7.4 10 11l-3.6 3.6 2 2L12 13l3.6 3.6 2-2L14 11l3.6-3.6z"/></g>
+    <g id="icon-check"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></g>
+    <g id="icon-warn"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></g>
+    <g id="icon-add"><path d="M12 5v6H6v2h6v6h2v-6h6v-2h-6V5h-2z"/></g>
+    <g id="icon-sun"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/><line x1="4.2" y1="19.8" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.8" y2="4.2"/></g></g>
+    <g id="icon-moon"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></g>
+    <g id="icon-help"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></g>
+  </defs>
+</svg>
+
+<!-- STARTUP OVERLAY -->
+<div id="startup" class="startup-overlay on">
+  <div class="startup-box" id="startup-box">
+    <div class="startup-spinner"></div>
+    <div class="startup-text" id="startup-text">正在连接 Smithbox...</div>
+    <button class="startup-retry hidden" id="startup-retry" onclick="Actions.reconnect()">
+      <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-refresh"/></svg>
+      重试连接
+    </button>
+    <a class="startup-download hidden" id="startup-download" onclick="Actions.openSmithboxUrl()">
+      <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-download"/></svg>
+      下载 Smithbox
+    </a>
+    <button class="startup-help hidden" id="startup-help" onclick="Actions.openHelp()">
+      <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-help"/></svg>
+      告诉我怎么做
+    </button>
+  </div>
+</div>
+
+<!-- HELP MODAL -->
+<div id="help-overlay" class="help-overlay" onclick="event.target===this && Actions.closeHelp()">
+  <div class="help-box">
+    <div class="help-header">
+      <h2>如何连接 Smithbox</h2>
+      <button class="icon-btn" onclick="Actions.closeHelp()">
+        <svg viewBox="0 0 24 24" width="18" height="18"><use href="#icon-close"/></svg>
+      </button>
+    </div>
+    <div class="help-body">
+      <div class="help-step">
+        <div class="help-step-num">1</div>
+        <div class="help-step-content">
+          <div class="help-step-title">下载并安装 Smithbox</div>
+          <div class="help-step-desc">前往 <a href="https://github.com/vawser/Smithbox/releases/latest" target="_blank">Smithbox 发布页</a>，下载最新版本（需要 2.2.4 或更新版本）。解压到任意文件夹。</div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-step-num">2</div>
+        <div class="help-step-content">
+          <div class="help-step-title">新建 Smithbox 项目</div>
+          <div class="help-step-desc">运行 <code>Smithbox.exe</code>，根据下面的图片创建一个项目。注意，项目名称和项目路径不能有中文。（点击下方图片可放大）</div>
+          <div class="help-img"><img src="screenshots/create.png" style="width:100%;height:100%;object-fit:contain;cursor:zoom-in" onclick="Actions.zoomImage(this)" /></div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-step-num">3</div>
+        <div class="help-step-content">
+          <div class="help-step-title">点击Cancel</div>
+          <div class="help-step-desc">项目创建后，Smithbox 会询问是否导入文本，直接点击 <strong>Cancel</strong> 跳过即可。</div>
+          <div class="help-img"><img src="screenshots/row.png" style="width:100%;height:100%;object-fit:contain;cursor:zoom-in" onclick="Actions.zoomImage(this)" /></div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-step-num">4</div>
+        <div class="help-step-content">
+          <div class="help-step-title">完成</div>
+          <div class="help-step-desc">当你看到下面的样子说明SmithBox已经就绪，你可以关闭此教程并点击重试。</div>
+          <div class="help-img"><img src="screenshots/ok.png" style="width:100%;height:100%;object-fit:contain;cursor:zoom-in" onclick="Actions.zoomImage(this)" /></div>
+        </div>
+      </div>
+    </div>
+    <div class="help-footer">
+      <button class="confirm-ok" onclick="Actions.closeHelp()">我知道了</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <span class="brand">Relic Picker</span>
+    <span style="flex:1"></span>
+    <button class="theme-btn" onclick="Actions.toggleTheme()" title="切换主题">
+      <svg viewBox="0 0 24 24" width="14" height="14" id="theme-icon"><use href="#icon-moon"/></svg>
+    </button>
+    <button class="theme-btn" onclick="Tour.start()" title="使用教程" style="margin-right:6px">
+      <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-help"/></svg>
+    </button>
+    <button class="box-btn" onclick="Actions.toggleBox()">
+      <span class="box-btn-dot"></span> 遗物盒 <span id="box-badge">0</span>
+    </button>
+  </div>
+
+  <!-- DISCONNECT BANNER -->
+  <div id="disc-banner" class="disc-banner">
+    <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-warn"/></svg>
+    <span>未连接到 Smithbox</span>
+    <button onclick="Actions.reconnect()">
+      <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-refresh"/></svg>
+      重试连接
+    </button>
+  </div>
+
+  <!-- FILTERS -->
+  <div id="filters">
+    <div class="row">
+      <span class="label">来源</span>
+      <span class="chip on" data-shop="normal-old" onclick="Actions.setShop(this)">旧版普通</span>
+      <span class="chip" data-shop="normal-new" onclick="Actions.setShop(this)">新版普通</span>
+      <span class="chip" data-shop="deep-old" onclick="Actions.setShop(this)">旧版深夜</span>
+      <span class="chip" data-shop="deep-new" onclick="Actions.setShop(this)">新版深夜</span>
+    </div>
+    <div class="row">
+      <span class="label">顔色</span>
+      <span class="chip fire on" data-val="0" onclick="Actions.setColor(this)"><span class="color-dot dot-0"></span>火燃</span>
+      <span class="chip water" data-val="1" onclick="Actions.setColor(this)"><span class="color-dot dot-1"></span>水滴</span>
+      <span class="chip light" data-val="2" onclick="Actions.setColor(this)"><span class="color-dot dot-2"></span>光耀</span>
+      <span class="chip green" data-val="3" onclick="Actions.setColor(this)"><span class="color-dot dot-3"></span>幽静</span>
+    </div>
+  </div>
+
+  <!-- EFFECTS CARD -->
+  <div id="effects-card">
+    <div class="card-title">效果</div>
+    <div id="effects-list">
+      <span class="add-effect" onclick="Popover.open('effect')">
+        <svg viewBox="0 0 24 24" width="16" height="16"><use href="#icon-add"/></svg>
+        添加效果
+      </span>
+    </div>
+    <div id="match-line">
+      <span class="count" id="match-count">—</span> 个遗物匹配
+      <span id="match-info"></span>
+    </div>
+  </div>
+
+  <!-- RELIC MATCH LIST -->
+  <div id="relic-card">
+    <div class="card-title">匹配遗物</div>
+    <div id="relic-list">
+      <span class="add-effect" style="opacity:0.5">添加效果后将显示匹配遗物</span>
+    </div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div id="action-bar">
+    <span class="status" id="status-text"></span>
+    <button class="btn-roll" id="btn-roll" disabled onclick="Actions.roll()">🎲 随机</button>
+    <button class="btn-box" id="btn-box" disabled onclick="Actions.addToBox()">加入遗物盒</button>
+    <button class="btn-apply" id="btn-apply" disabled onclick="Actions.apply()">应用</button>
+  </div>
+</div>
+
+<!-- POPOVER (shared) -->
+<div id="pop-mask" onclick="Popover.close()"></div>
+<div id="pop">
+  <input type="text" id="pop-search" placeholder="搜索..." oninput="Popover.onSearch()" autocomplete="off">
+  <div class="pop-list" id="pop-list"></div>
+</div>
+
+<!-- IMAGE VIEWER -->
+<div id="img-viewer" class="img-viewer" onclick="Actions.closeImage()">
+  <img id="img-viewer-img" src="" />
+  <div class="img-viewer-hint">点击任意位置关闭</div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div id="confirm-overlay" class="confirm-overlay" onclick="event.target===this && Modal.cancel()">
+  <div class="confirm-box">
+    <div class="confirm-body" id="confirm-body"></div>
+  </div>
+</div>
+
+<!-- BOX DRAWER -->
+<div id="box-overlay">
+  <div id="box-drawer">
+    <div class="dh">
+	  <div class="dh-left">
+		  <h2>
+			<svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:4px"><use href="#icon-box"/></svg>
+			遗物盒
+		  </h2>
+		  <span class="dh-count" id="drawer-count">0</span>
+	  </div>
+      <button onclick="Actions.toggleBox()" class="icon-btn">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-close"/></svg>
+      </button>
+    </div>
+    <div class="box-toolbar">
+      <input type="text" id="box-search" placeholder="搜索遗物盒..." oninput="Render.box()" autocomplete="off">
+      <span style="flex:1"></span>
+      <button onclick="Actions.importBox()" title="导入">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-download"/></svg>
+      </button>
+      <button onclick="Actions.exportBox()" title="导出">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-upload"/></svg>
+      </button>
+      <button onclick="Actions.deleteSelectedBox()" title="删除选中">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-close"/></svg>
+      </button>
+      <button class="box-batch-btn" onclick="Actions.batchApply()" title="批量应用选中">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-batch"/></svg>
+        批量
+      </button>
+    </div>
+    <div class="dl" id="drawer-list"><div class="box-empty">遗物盒是空的</div></div>
+  </div>
+  <div class="backdrop" onclick="Actions.toggleBox()"></div>
+</div>
+
+<!-- ONBOARDING TOUR -->
+<div id="tour-overlay" class="tour-overlay">
+  <div id="tour-spotlight" class="tour-spotlight"></div>
+  <div id="tour-tip" class="tour-tip">
+    <div class="tour-tip-step" id="tour-step-label">1 / 5</div>
+    <div class="tour-tip-title" id="tour-title"></div>
+    <div class="tour-tip-desc" id="tour-desc"></div>
+    <div class="tour-tip-dots" id="tour-dots"></div>
+    <div class="tour-tip-actions">
+      <button class="tour-btn-skip" onclick="Tour.skip()">跳过</button>
+      <span style="flex:1"></span>
+      <button class="tour-btn-prev" id="tour-prev" onclick="Tour.prev()">上一步</button>
+      <button class="tour-btn-next" id="tour-next" onclick="Tour.next()">下一步</button>
+      <button class="tour-btn-finish" id="tour-finish" onclick="Tour.skip()">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
