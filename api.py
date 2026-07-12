@@ -90,7 +90,7 @@ class RelicPickerAPI:
         """Connect to Smithbox and load data. Called once on app start."""
         try:
             self._client = SmithboxClient()
-            self._loader = Loader(_pkg_path("ae_names.json"))
+            self._loader = Loader(_pkg_path("names.json"))
             self._loader.load_all(self._client)
             self._build_indexes()
             self._matcher = Matcher(
@@ -123,7 +123,7 @@ class RelicPickerAPI:
                 pass
             self._client = None
 
-        self._loader = Loader(_pkg_path("ae_names.json"))
+        self._loader = Loader(_pkg_path("names.json"))
         self.effects = []
 
         try:

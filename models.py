@@ -18,7 +18,7 @@ class EffectVariant(Enum):
 class Effect:
     """A selectable affix effect."""
     id: int                       # aeId
-    name: str                     # Chinese name from ae_names.json
+    name: str                     # Chinese name from names.json
     compat_id: str                # compatibility group — effects sharing a compat_id conflict
     variant: EffectVariant        # normal / cursed-strong / cursed-weak
     pool_id: int = 0              # which AETable pool this effect belongs to

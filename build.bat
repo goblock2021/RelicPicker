@@ -13,7 +13,7 @@ pyinstaller --noconfirm --onefile --windowed ^
   --name "RelicPicker_v5" ^
   --add-data "static;static" ^
   --add-data "proto;proto" ^
-  --add-data "ae_names.json;." ^
+  --add-data "names.json;." ^
   --hidden-import grpc ^
   --hidden-import pywebview ^
   --hidden-import internal_pb2 ^

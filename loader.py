@@ -57,7 +57,7 @@ class Loader:
 
         if ae_names_path is None:
             ae_names_path = os.path.join(
-                os.path.dirname(__file__), "ae_names.json")
+                os.path.dirname(__file__), "names.json")
         self._load_ae_names(ae_names_path)
 
     # ── Public API ───────────────────────────────────────────────────
