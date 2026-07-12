@@ -51,7 +51,7 @@ pip install pyinstaller
 build.bat
 ```
 
-输出：`dist/RelicPicker_v5.exe`
+输出：`dist/RelicPicker.exe`
 
 ## 技术架构
 

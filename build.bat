@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-echo === Relic Picker v5 - Build ===
+echo === RelicPicker - Build ===
 echo.
 
 :: Clean old builds
@@ -10,7 +10,7 @@ echo.
 
 :: Build
 pyinstaller --noconfirm --onefile --windowed ^
-  --name "RelicPicker_v5" ^
+  --name "RelicPicker" ^
   --add-data "static;static" ^
   --add-data "proto;proto" ^
   --add-data "names.json;." ^
@@ -36,5 +36,5 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo === Build OK ===
-echo dist\RelicPicker_v5.exe
+echo dist\RelicPicker.exe
 pause

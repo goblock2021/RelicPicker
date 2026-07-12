@@ -313,6 +313,15 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .tour-btn-finish:hover{background:var(--gold-hover)}
 .tour-highlight{position:relative!important;z-index:910!important;box-shadow:0 0 0 4px var(--gold),0 0 20px rgba(196,164,92,.3)!important;border-radius:8px!important;background:var(--card)!important}
 
+/* ═══ UPDATE BANNER ═══ */
+.update-banner{display:flex;align-items:center;gap:8px;padding:6px 14px;margin:0 14px 8px;border-radius:8px;font-size:12px;font-family:var(--font);background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);transition:.2s}
+.update-banner.hidden{display:none}
+.update-banner span{flex:1}
+#update-dl-btn{background:var(--gold);color:#1a1a1a;border:none;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:.15s}
+#update-dl-btn:hover{opacity:.85}
+.update-close{background:none;border:none;color:var(--faint);cursor:pointer;padding:2px;display:flex;align-items:center}
+.update-close:hover{color:var(--muted)}
+
 /* ═══ TOAST ═══ */
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:16px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text);z-index:200;pointer-events:none;opacity:0;transition:opacity .2s}
 #toast.on{opacity:1}

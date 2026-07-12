@@ -867,6 +867,18 @@ class RelicPickerAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def check_update(self) -> dict:
+        """Check GitHub for a newer release. Called on app start."""
+        try:
+            from updater import check_for_update
+            info = check_for_update()
+            if info:
+                return {"has_update": True, **info}
+            return {"has_update": False}
+        except Exception as e:
+            log.debug("Update check error: %s", e)
+            return {"has_update": False}
+
     def open_url(self, url: str) -> dict:
         """Open a URL in the default system browser."""
         import webbrowser

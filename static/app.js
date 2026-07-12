@@ -643,6 +643,30 @@ const Actions = {
     try { API.call('open_url', 'https://github.com/vawser/Smithbox/releases/latest'); } catch (e) {}
   },
 
+  _updateUrl: '',
+
+  async checkUpdate() {
+    try {
+      const info = await API.call('check_update');
+      if (info && info.has_update) {
+        this._updateUrl = info.download_url || info.url;
+        document.getElementById('update-text').textContent =
+          `发现新版本 ${info.version}`;
+        document.getElementById('update-banner').classList.remove('hidden');
+      }
+    } catch (e) { /* silent */ }
+  },
+
+  openUpdateUrl() {
+    if (this._updateUrl) {
+      try { API.call('open_url', this._updateUrl); } catch (e) {}
+    }
+  },
+
+  dismissUpdate() {
+    document.getElementById('update-banner').classList.add('hidden');
+  },
+
   openHelp() {
     document.getElementById('help-overlay').classList.add('on');
   },
@@ -1098,6 +1122,7 @@ const Tour = {
         await State.refresh();
         Render.all();
         Toast.show(result.message);
+        Actions.checkUpdate();
         // 首次连接成功后显示引导式教程
         try {
           const settings = await API.call('get_settings');
