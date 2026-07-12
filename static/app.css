@@ -317,7 +317,7 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .update-banner{display:flex;align-items:center;gap:8px;padding:6px 14px;margin:0 14px 8px;border-radius:8px;font-size:12px;font-family:var(--font);background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);transition:.2s}
 .update-banner.hidden{display:none}
 .update-banner span{flex:1}
-#update-dl-btn{background:var(--gold);color:#1a1a1a;border:none;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:.15s}
+#update-dl-btn{background:var(--gold);color:var(--bg);border:none;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:.15s}
 #update-dl-btn:hover{opacity:.85}
 .update-close{background:none;border:none;color:var(--faint);cursor:pointer;padding:2px;display:flex;align-items:center}
 .update-close:hover{color:var(--muted)}
