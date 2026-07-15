@@ -33,6 +33,9 @@ from loader import Loader, SHOPS, SHOP_POOLS
 from matcher import Matcher
 from models import EffectVariant, BoxItem
 
+SHOP_NAMES_CN = {"normal-old":"旧版普通","normal-new":"新版普通",
+                 "deep-old":"旧版深夜","deep-new":"新版深夜"}
+
 
 class RelicPickerAPI:
     """API class exposed to JavaScript as `pywebview.api`."""
@@ -633,19 +636,36 @@ class RelicPickerAPI:
 
     def add_to_box(self) -> dict:
         """Save current effects to relic box."""
+        match = self._get_selected_match()
+        relic_id = match.relic.id if match else 0
+
+        # Resolve shop: validate against relic's actual shop, or auto-detect
+        if relic_id != 0 and self._loader:
+            actual_shops = self._loader.shops_for_relic(relic_id)
+            if actual_shops:
+                if self.shop not in actual_shops:
+                    shop_names = [SHOP_NAMES_CN.get(s, s) for s in actual_shops]
+                    return {"success": False,
+                            "message": f"商店不匹配：该遗物属于 {' / '.join(shop_names)}，"
+                                       f"请切换到对应商店后再添加"}
+            else:
+                # Relic not in any known shop — still allow, tag as unknown
+                pass
+        resolved_shop = self.shop
+        if relic_id == 0:
+            resolved_shop = self._resolve_shop_for_effects(self.effects, self.color)
+
         dup = any(
-            b.effects == self.effects and b.shop == self.shop
+            b.effects == self.effects and b.shop == resolved_shop
+            and b.color == self.color and b.relic_id == relic_id
             for b in self.box
         )
         if dup:
             return {"success": False, "message": "已在遗物盒中"}
 
-        match = self._get_selected_match()
-        relic_id = match.relic.id if match else 0
-
         item = BoxItem(
             effects=self.effects.copy(),
-            shop=self.shop,
+            shop=resolved_shop,
             color=self.color,
             added_at=datetime.now().strftime("%Y/%m/%d"),
             relic_id=relic_id,
@@ -672,6 +692,7 @@ class RelicPickerAPI:
     def import_box(self, text: str) -> dict:
         """Import from v4 share-format: RELIC_ID:ae1,ae2:cae1,cae2."""
         count = 0
+        skipped = 0
         for line in text.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -693,23 +714,44 @@ class RelicPickerAPI:
                 if ci < len(effects):
                     effects[ci]["curse_id"] = cid
 
-            # Auto-detect shop: try each shop, pick the first that matches
+            # Detect shop: if relic_id is given, use its actual shop; otherwise auto-match
             detected_shop = self.shop  # fallback
             detected_color = self.color  # fallback
             detected_relic_id = imported_relic_id
             if self._matcher and self._loader:
-                for sk in SHOPS:
-                    matches = self._matcher.match(
-                        effects,
-                        shop_is_deep=SHOPS[sk]["deep"],
-                        relics=self._loader.relics_for_shop(sk),
-                    )
-                    if matches:
-                        detected_shop = sk
-                        detected_color = matches[0].relic.color
-                        if not detected_relic_id:
-                            detected_relic_id = matches[0].relic.id
-                        break
+                if imported_relic_id:
+                    # Use the relic's actual shop
+                    actual_shops = self._loader.shops_for_relic(imported_relic_id)
+                    if actual_shops:
+                        # Find which of the relic's shops can hold these effects
+                        for sk in actual_shops:
+                            matches = self._matcher.match(
+                                effects,
+                                shop_is_deep=SHOPS[sk]["deep"],
+                                relics=self._loader.relics_for_shop(sk),
+                            )
+                            if matches:
+                                detected_shop = sk
+                                detected_color = matches[0].relic.color
+                                break
+                        else:
+                            # Relic's shops found but none match effects
+                            detected_shop = "unknown"
+                    else:
+                        detected_shop = "unknown"
+                else:
+                    # No relic_id — auto-detect from effects
+                    detected_shop = self._resolve_shop_for_effects(effects, self.color)
+                    if detected_shop != "unknown":
+                        matches = self._matcher.match(
+                            effects,
+                            shop_is_deep=SHOPS[detected_shop]["deep"],
+                            relics=self._loader.relics_for_shop(detected_shop),
+                        )
+                        if matches:
+                            detected_color = matches[0].relic.color
+                            if not detected_relic_id:
+                                detected_relic_id = matches[0].relic.id
 
             # If relic_id was specified, try to get its actual color
             if imported_relic_id and self._loader:
@@ -720,6 +762,16 @@ class RelicPickerAPI:
                     r = self._load_relic_on_demand(imported_relic_id)
                     if r is not None:
                         detected_color = r.color
+
+            # Check for duplicate (same four fields as add_to_box)
+            dup = any(
+                b.effects == effects and b.shop == detected_shop
+                and b.color == detected_color and b.relic_id == detected_relic_id
+                for b in self.box
+            )
+            if dup:
+                skipped += 1
+                continue
 
             self.box.append(BoxItem(
                 effects=effects,
@@ -733,11 +785,23 @@ class RelicPickerAPI:
         self._save_box()
         self._box_cache = None  # invalidate — full rebuild on next get_box
         state = self.get_state()
-        state["message"] = f"已导入 {count} 个"
+        parts = [f"已导入 {count} 个"]
+        if skipped:
+            parts.append(f"跳过 {skipped} 个重复")
+        state["message"] = "，".join(parts)
         return state
 
-    def export_box(self) -> dict:
-        """Export in v4 share-format: # comments + RELIC_ID:aeIds:caeIds."""
+    def export_box(self, indices: list[int] = None) -> dict:
+        """Export in v4 share-format: # comments + RELIC_ID:aeIds:caeIds.
+        If indices is given, export only those box items; otherwise export all."""
+        items = []
+        if indices:
+            for i in indices:
+                if 0 <= i < len(self.box):
+                    items.append(self.box[i])
+        else:
+            items = list(self.box)
+
         lines = []
         lines.append("# RelicBox")
         lines.append(f"# {datetime.now().strftime('%Y/%m/%d')}")
@@ -748,7 +812,7 @@ class RelicPickerAPI:
         saved_shop = self.shop
         saved_color = self.color
 
-        for b in self.box:
+        for b in items:
             # Use stored relic_id, fallback to matching
             relic_id = b.relic_id if b.relic_id else 0
             if not relic_id:
@@ -902,11 +966,11 @@ class RelicPickerAPI:
         else:
             items = list(enumerate(self.box))
 
-        SHOP_NAMES = {"normal-old":"旧版普通","normal-new":"新版普通",
-                       "deep-old":"旧版深夜","deep-new":"新版深夜"}
+        SHOP_NAMES = SHOP_NAMES_CN
 
         saved_effects = list(self.effects)
         saved_shop = self.shop
+        saved_color = self.color
 
         # Pre-load relic data for all items in the batch
         for _, item in items:
@@ -921,16 +985,40 @@ class RelicPickerAPI:
                 shop_name = SHOP_NAMES.get(shop, shop)
                 self.shop = shop
                 self.effects = item.effects.copy()
+                self.color = item.color
                 try:
                     matches = self._match()
+                    match_ids = [(m.relic.id, m.relic.name) for m in matches]
+                    log.info("batch_apply[%d]: relic_id=%d, shop=%s, color=%d, "
+                             "matches=%s",
+                             idx, item.relic_id, shop, self.color, match_ids)
+
                     if matches:
-                        relic = matches[0].relic
+                        # If relic_id is specified, must find it in matches
+                        match = matches[0]
+                        if item.relic_id:
+                            found = False
+                            for m in matches:
+                                if m.relic.id == item.relic_id:
+                                    match = m
+                                    found = True
+                                    break
+                            if not found:
+                                log.warning("batch_apply[%d]: relic_id=%d not in matches %s",
+                                            idx, item.relic_id,
+                                            [m.relic.id for m in matches])
+                                results.append({"ok": False, "name": "?",
+                                    "error": f"找不到有效的遗物 (ID={item.relic_id})",
+                                    "shop": shop_name, "idx": idx})
+                                continue
+                            log.info("batch_apply[%d]: matched by relic_id=%d", idx, item.relic_id)
+                        relic = match.relic
                         if self._check_effects_vs_relic(relic, self.effects):
                             results.append({"ok": False, "name": relic.name,
                                 "error": "非法遗物：词条与AET池不匹配",
                                 "shop": shop_name, "idx": idx})
                         else:
-                            self._do_apply(matches[0])
+                            self._do_apply(match)
                             results.append({"ok": True, "name": relic.name,
                                 "shop": shop_name, "idx": idx})
                     else:
@@ -942,10 +1030,26 @@ class RelicPickerAPI:
         finally:
             self.effects = saved_effects
             self.shop = saved_shop
+            self.color = saved_color
 
         return {"results": results}
 
     # ── Helpers ──────────────────────────────────────────────────────
+
+    def _resolve_shop_for_effects(self, effects, color):
+        """Auto-detect which shop can hold these effects. Returns shop key or 'unknown'."""
+        if not self._matcher or not self._loader:
+            return "unknown"
+        for sk in SHOPS:
+            matches = self._matcher.match(
+                effects,
+                color=color,
+                shop_is_deep=SHOPS[sk]["deep"],
+                relics=self._loader.relics_for_shop(sk),
+            )
+            if matches:
+                return sk
+        return "unknown"
 
     def _match(self) -> list:
         if not self._matcher or not self._loader:
@@ -1255,6 +1359,7 @@ class RelicPickerAPI:
                 relic_shop = False
         else:
             relic_name = ""
+
         return {
             "effects": b.effects,
             "effect_names": effect_names,

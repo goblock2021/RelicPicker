@@ -163,8 +163,8 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .pi-tag.dlc{background:var(--orange-bg);color:var(--orange)}
 
 /* ═══ BOX DRAWER ═══ */
-#box-overlay{position:fixed;inset:0;z-index:930;pointer-events:none;visibility:hidden}
-#box-overlay.on{pointer-events:auto;visibility:visible}
+#box-overlay{position:fixed;inset:0;z-index:930;pointer-events:none;visibility:hidden;transition:visibility 0s .25s}
+#box-overlay.on{pointer-events:auto;visibility:visible;transition:visibility 0s 0s}
 #box-overlay .backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s}
 #box-overlay.on .backdrop{background:rgba(0,0,0,.4)}
 #box-drawer{position:relative;z-index:1;width:400px;height:100%;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transform:translateX(-100%);transition:transform .25s ease}
