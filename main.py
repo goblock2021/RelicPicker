@@ -5,6 +5,33 @@ Launches a pywebview window with the web frontend.
 
 import sys
 import os
+
+
+def _alloc_console():
+    """Allocate a dedicated console window on Windows.
+
+    When built with --windowed the process has no console at all.
+    AllocConsole() creates a new console window so stdout/stderr/stdin
+    are visible — useful for debugging and fallback mode.
+
+    Set the RELICPICKER_NO_CONSOLE env var to suppress it.
+    """
+    if sys.platform != "win32":
+        return
+    if os.environ.get("RELICPICKER_NO_CONSOLE"):
+        return
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    if not kernel32.AllocConsole():
+        return
+    try:
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+    except OSError:
+        pass
+
+
 import json
 import logging
 import base64
@@ -125,11 +152,14 @@ def try_browser_fallback():
 
     log.warning("pywebview 不可用，使用浏览器模式。")
 
+    # Allocate a console window so the user can see logs and Ctrl+C
+    _alloc_console()
+
     # Create API — frontend will handle connection via reconnect()
     api = create_api()
 
     class APIHandler(SimpleHTTPRequestHandler):
-        _api: RelicPickerAPI = api
+        _api: "RelicPickerAPI" = api
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=STATIC_DIR, **kwargs)
@@ -178,6 +208,9 @@ def main():
     os.chdir(BASE_DIR)
 
     debug = "--debug" in sys.argv
+
+    if "--console" in sys.argv:
+        _alloc_console()
 
     if "--browser" in sys.argv or "--http" in sys.argv:
         try_browser_fallback()
