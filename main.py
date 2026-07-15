@@ -209,6 +209,21 @@ def try_browser_fallback():
         log.info("已退出。")
 
 
+def _read_config() -> dict:
+    """Read the app settings.json (same location as api.py uses)."""
+    if getattr(sys, "frozen", False):
+        app_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "RelicPicker")
+    else:
+        app_dir = BASE_DIR
+    path = os.path.join(app_dir, "settings.json")
+    try:
+        if os.path.exists(path):
+            return json.load(open(path, encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
 def main():
     os.chdir(BASE_DIR)
 
@@ -217,7 +232,14 @@ def main():
     if "--console" in sys.argv:
         _alloc_console()
 
-    if "--browser" in sys.argv or "--http" in sys.argv:
+    force_browser = "--browser" in sys.argv or "--http" in sys.argv
+
+    if not force_browser:
+        config = _read_config()
+        if config.get("browser_mode"):
+            force_browser = True
+
+    if force_browser:
         try_browser_fallback()
     elif not try_pywebview(debug=debug):
         try_browser_fallback()
