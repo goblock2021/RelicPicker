@@ -31,6 +31,11 @@ def _alloc_console():
     except OSError:
         pass
 
+    # Update existing logging handlers to use the new console stream
+    for handler in logging.root.handlers[:]:
+        if isinstance(handler, logging.StreamHandler):
+            handler.stream = sys.stderr
+
 
 import json
 import logging
