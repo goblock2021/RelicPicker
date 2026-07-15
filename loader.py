@@ -128,6 +128,10 @@ class Loader:
         ids = self._shop_relics.get(shop_key, set())
         return [r for rid, r in self._relics.items() if rid in ids]
 
+    def shops_for_relic(self, relic_id: int) -> list[str]:
+        """Return shop keys that contain the given relic."""
+        return [sk for sk, ids in self._shop_relics.items() if relic_id in ids]
+
     # ── Accessors ────────────────────────────────────────────────────
 
     @property

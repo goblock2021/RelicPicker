@@ -84,7 +84,7 @@ def create_api():
     return RelicPickerAPI()
 
 
-def try_pywebview():
+def try_pywebview(debug=False):
     """Attempt to start with pywebview."""
     try:
         import webview
@@ -92,8 +92,9 @@ def try_pywebview():
         api = create_api()
         html = get_html()
 
+        from version import __version__
         window = webview.create_window(
-            title="Relic Picker v5",
+            title=f"RelicPicker v{__version__}",
             html=html,
             js_api=api,
             width=900,
@@ -102,7 +103,7 @@ def try_pywebview():
             resizable=True,
         )
 
-        webview.start()
+        webview.start(debug=debug)
 
     except ImportError:
         log.error("pywebview 未安装。请运行: pip install pywebview")
@@ -120,17 +121,12 @@ def try_pywebview():
 def try_browser_fallback():
     """Fallback: start a local HTTP server and open browser."""
     import webbrowser
-    from http.server import HTTPServer, SimpleHTTPRequestHandler
-    import threading
+    from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
     log.warning("pywebview 不可用，使用浏览器模式。")
 
-    # Start API bridge in a simple way via a tiny JSON endpoint
+    # Create API — frontend will handle connection via reconnect()
     api = create_api()
-    api.connect()
-
-    # Write a small server script that serves static + API
-    from api import RelicPickerAPI
 
     class APIHandler(SimpleHTTPRequestHandler):
         _api: RelicPickerAPI = api
@@ -147,11 +143,13 @@ def try_browser_fallback():
                 args = data.get("args", [])
                 kwargs = data.get("kwargs", {})
 
+                log.info("API call: %s(%s)", method, args)
                 try:
                     func = getattr(self._api, method)
                     result = func(*args, **kwargs)
                     self._send_json({"ok": True, "data": result})
                 except Exception as e:
+                    log.error("API error %s: %s", method, e)
                     self._send_json({"ok": False, "error": str(e)})
             else:
                 self._send_json({"ok": False, "error": "Not found"}, 404)
@@ -159,21 +157,18 @@ def try_browser_fallback():
         def _send_json(self, data, status=200):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     port = 8080
-    server = HTTPServer(("127.0.0.1", port), APIHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    webbrowser.open(f"http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), APIHandler)
     log.info("浏览器模式启动: http://127.0.0.1:%d", port)
+    webbrowser.open(f"http://127.0.0.1:{port}")
     log.info("按 Ctrl+C 退出。")
 
     try:
-        while True:
-            pass
+        server.serve_forever()
     except KeyboardInterrupt:
         server.shutdown()
         log.info("已退出。")
@@ -182,10 +177,11 @@ def try_browser_fallback():
 def main():
     os.chdir(BASE_DIR)
 
-    if "--debug" in sys.argv:
-        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--auto-open-devtools-for-tabs"
+    debug = "--debug" in sys.argv
 
-    if not try_pywebview():
+    if "--browser" in sys.argv or "--http" in sys.argv:
+        try_browser_fallback()
+    elif not try_pywebview(debug=debug):
         try_browser_fallback()
 
 

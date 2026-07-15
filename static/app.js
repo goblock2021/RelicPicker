@@ -12,18 +12,22 @@ const API = {
   _mode: null, // 'pywebview' | 'http' | null (auto-detect)
 
   async call(method, ...args) {
-    // Auto-detect mode
+    // Auto-detect mode (retry if pywebview hasn't injected yet)
     if (this._mode === null) {
       if (window.pywebview && window.pywebview.api) {
         this._mode = 'pywebview';
       } else if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
         this._mode = 'http';
       } else {
-        // pywebview may take a tick to inject the api — wait and retry
-        await new Promise(r => setTimeout(r, 200));
-        if (window.pywebview && window.pywebview.api) {
-          this._mode = 'pywebview';
-        } else {
+        // pywebview may take a moment to inject the api — retry
+        for (let attempt = 0; attempt < 15; attempt++) {
+          await new Promise(r => setTimeout(r, 200));
+          if (window.pywebview && window.pywebview.api) {
+            this._mode = 'pywebview';
+            break;
+          }
+        }
+        if (this._mode === null) {
           throw new Error('No backend available. Is pywebview loaded?');
         }
       }
@@ -67,7 +71,7 @@ const API = {
   async addToBox() { return API.call('add_to_box'); },
   async removeFromBox(idx) { return API.call('remove_from_box', idx); },
   async importBox(text) { return API.call('import_box', text); },
-  async exportBox() { return API.call('export_box'); },
+  async exportBox(indices) { return API.call('export_box', indices); },
   async batchApply() { return API.call('batch_apply'); },
   async roll() { return API.call('roll'); },
 };
@@ -144,7 +148,7 @@ const Render = {
       return `<div class="effect-row">
         <span class="effect-chip${chipCls}${invalidClass}" onclick="Popover.open('effect', null, ${i})">
           <svg class="ec-star${favCls}" viewBox="0 0 24 24" width="12" height="12" onclick="event.stopPropagation();Actions.toggleFav(${e.eff_id})"><use href="#icon-star${e.fav?'-filled':''}"/></svg>
-          <span class="ec-name">${e.name}</span>${e.dlc_only ? '<span class="pi-tag dlc" style="margin:0 2px">DLC</span>' : ''}${invalidMark}<span style="font-size:9px;color:var(--faint);margin-left:4px">#${e.eff_id} P${e.pool_id}</span>${tag}
+          <span class="ec-name">${e.name}</span>${e.dlc_only ? '<span class="pi-tag dlc" style="margin:0 2px">DLC</span>' : ''}${invalidMark}<span style="font-size:9px;color:var(--faint);margin-left:4px">#${e.eff_id}</span>${tag}
           <span class="ec-remove" onclick="event.stopPropagation();Actions.removeEffect(${i})">×</span>
         </span>
         ${cursePicker}
@@ -164,8 +168,12 @@ const Render = {
           info.textContent = '— 已选: [' + sel.relic_id + '] ' + sel.relic_name;
           info.style.color = 'var(--green)';
         } else {
-          info.textContent = '';
+          info.textContent = '— 不可用: 所选遗物不在当前商店中';
+          info.style.color = 'var(--red)';
         }
+      } else if (State.selected_relic_id && !State.matches.length) {
+        info.textContent = '— 不可用: 所选遗物不在当前商店中';
+        info.style.color = 'var(--red)';
       } else {
         info.textContent = '';
       }
@@ -247,7 +255,8 @@ const Render = {
     const COL = ['火','水','光','幽'];
     const SHOP_NAMES = {
       'normal-old':'旧版普通','normal-new':'新版普通',
-      'deep-old':'旧版深夜','deep-new':'新版深夜'
+      'deep-old':'旧版深夜','deep-new':'新版深夜',
+      'unknown':'未知'
     };
 
     // Group items by shop
@@ -326,6 +335,10 @@ const Render = {
         await API.setCurse(lastIdx, e.curse_id);
         await State.refresh();
       }
+    }
+    // Restore color (before relic — set_color resets selected_relic_id)
+    if (b.color !== undefined && b.color !== -1) {
+      await API.setColor(b.color);
     }
     // Restore relic selection
     if (b.relic_id) {
@@ -421,7 +434,7 @@ const Popover = {
         <svg class="pi-star${fav}" viewBox="0 0 24 24" width="12" height="12" onclick="event.stopPropagation();Popover.toggleFav(${e.id})"><use href="#icon-star${e.is_fav?'-filled':''}"/></svg>
         <span class="pi-name">${e.name}</span>
         ${e.dlc_only ? '<span class="pi-tag dlc">DLC</span>' : ''}
-        <span style="font-size:10px;color:var(--faint);flex-shrink:0">#${e.id} P${e.pool_id}</span>
+        <span style="font-size:10px;color:var(--faint);flex-shrink:0">#${e.id}</span>
         ${tag ? `<span class="pi-tag ${tagCls}">${tag}</span>` : ''}
         ${conflict ? '<span class="pi-tag conflict">冲突</span>' : ''}
         ${picked ? '<span style="font-size:10px;color:var(--green)">✓</span>' : ''}
@@ -543,7 +556,7 @@ const Actions = {
       html += `<div class="cm-row">表 ${n.table_id} → itemId=${n.item_id}</div>`;
     }
     for (const m of preview.pool_mods) {
-      html += `<div class="cm-row">Pool[${m.pool_id}] ${m.effect_name}</div>`;
+      html += `<div class="cm-row">${m.effect_name}</div>`;
       if (m.curse_name) html += `<div class="cm-row" style="padding-left:16px">诅咒: ${m.curse_name}</div>`;
     }
     html += `<div class="confirm-actions">
@@ -637,6 +650,7 @@ const Actions = {
     await API.removeFromBox(idx);
     State.boxItems = await API.getBox();
     Render.box();
+    document.getElementById('box-badge').textContent = State.boxItems.length;
   },
 
   openSmithboxUrl() {
@@ -649,7 +663,7 @@ const Actions = {
     try {
       const info = await API.call('check_update');
       if (info && info.has_update) {
-        this._updateUrl = info.download_url || info.url;
+        this._updateUrl = info.url;
         document.getElementById('update-text').textContent =
           `发现新版本 ${info.version}`;
         document.getElementById('update-banner').classList.remove('hidden');
@@ -729,6 +743,7 @@ const Actions = {
     const r = await API.importBox(result.text);
     State.boxItems = await API.getBox();
     Render.box();
+    document.getElementById('box-badge').textContent = State.boxItems.length;
     Toast.show(r.message || '已导入');
   },
 
@@ -740,11 +755,13 @@ const Actions = {
     const r = await API.importBox(result.text);
     State.boxItems = await API.getBox();
     Render.box();
+    document.getElementById('box-badge').textContent = State.boxItems.length;
     Toast.show(r.message || '已从剪贴板导入');
   },
 
   async exportBox() {
-    const result = await API.exportBox();
+    const sel = window._boxSel || [];
+    const result = await API.exportBox(sel.length ? sel : null);
     const text = result.text || '';
     if (!text) { Toast.show('没有可导出的内容'); return; }
     window._exportText = text;
@@ -771,8 +788,9 @@ const Actions = {
   },
 
   async saveBoxToFile() {
-    const result = await API.exportBox();
-    const saved = await API.call('save_box_to_file', result.text || '');
+    const text = window._exportText || '';
+    if (!text) { Toast.show('没有可导出的内容'); return; }
+    const saved = await API.call('save_box_to_file', text);
     Toast.show(saved.message || (saved.saved ? '已保存' : '已取消'));
   },
 
@@ -843,8 +861,11 @@ const Actions = {
 
     const busy = !applied;
 
+    const relicInfo = b.relic_id ? `<span style="color:var(--gold)">[${b.relic_id}] ${b.relic_name||''}</span>` : '';
+
     Modal.showRaw(`<div class="cm-title">批量应用 — 第 ${cursor + 1}/${total} 个</div>
       <div style="font-size:14px;font-weight:600;color:var(--gold);margin:8px 0 4px">${shopName}</div>
+      ${relicInfo ? `<div style="font-size:13px;margin:0 0 4px">${relicInfo}</div>` : ''}
       <div class="bp-cur-item">
         <div class="bi-main" style="flex:1">
           <div class="bi-effects">${(b.effect_names||[]).map(n=>`<div class="bi-line">· ${n}</div>`).join('')}</div>
