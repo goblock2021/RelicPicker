@@ -21,6 +21,8 @@ def _app_dir() -> str:
 
 log = logging.getLogger("relicpicker")
 
+BOX_VERSION = 1  # Current format version of relic_box.json
+
 def _pkg_path(filename: str) -> str:
     """Return path to a packaged resource file."""
     if getattr(sys, 'frozen', False):
@@ -1377,29 +1379,52 @@ class RelicPickerAPI:
         if os.path.exists(self._box_file):
             try:
                 raw = json.load(open(self._box_file, encoding="utf-8"))
-                self.box = [
-                    BoxItem(
-                        effects=item["effects"],
-                        shop=item.get("shop", "normal-old"),
-                        color=item.get("color", -1),
-                        added_at=item.get("added_at", ""),
-                        relic_id=item.get("relic_id", 0),
-                    )
-                    for item in raw
-                ]
             except (json.JSONDecodeError, KeyError):
                 self.box = []
+                return
+
+            # V0 format: bare array (no version wrapper)
+            if isinstance(raw, list):
+                items = raw
+                version = 0
+            else:
+                version = raw.get("version", 1)
+                items = raw.get("items", [])
+
+            # Apply migrations by version
+            # if version < 2:
+            #     items = [self._migrate_item_v2(item) for item in items]
+
+            self.box = [
+                BoxItem(
+                    effects=item["effects"],
+                    shop=item.get("shop", "normal-old"),
+                    color=item.get("color", -1),
+                    added_at=item.get("added_at", ""),
+                    relic_id=item.get("relic_id", 0),
+                )
+                for item in items
+            ]
+
+            # Auto-upgrade V0 -> V1 on first load
+            if version < BOX_VERSION:
+                self._save_box()
+        else:
+            self.box = []
 
     def _save_box(self):
-        data = [
-            {
-                "effects": b.effects,
-                "shop": b.shop,
-                "color": b.color,
-                "added_at": b.added_at,
-                "relic_id": b.relic_id,
-            }
-            for b in self.box
-        ]
+        data = {
+            "version": BOX_VERSION,
+            "items": [
+                {
+                    "effects": b.effects,
+                    "shop": b.shop,
+                    "color": b.color,
+                    "added_at": b.added_at,
+                    "relic_id": b.relic_id,
+                }
+                for b in self.box
+            ],
+        }
         with open(self._box_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)

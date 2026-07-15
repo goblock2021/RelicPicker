@@ -209,13 +209,51 @@ def try_browser_fallback():
         log.info("已退出。")
 
 
-def _read_config() -> dict:
-    """Read the app settings.json (same location as api.py uses)."""
+def _settings_path() -> str:
+    """Return the path to settings.json."""
     if getattr(sys, "frozen", False):
         app_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "RelicPicker")
     else:
         app_dir = BASE_DIR
-    path = os.path.join(app_dir, "settings.json")
+    return os.path.join(app_dir, "settings.json")
+
+
+SETTINGS_VERSION = 1
+
+
+def _migrate_settings() -> None:
+    """Read, migrate, and write back settings.json if format is outdated."""
+    path = _settings_path()
+    config = {}
+    if os.path.exists(path):
+        try:
+            config = json.load(open(path, encoding="utf-8"))
+        except Exception:
+            return
+
+    version = config.get("config_version", 0)
+
+    # V0 -> V1: first version tag — no structural changes
+    if version < 1:
+        version = 1
+
+    # Future migrations go here:
+    # if version < 2:
+    #     config["new_field"] = default_value
+    #     version = 2
+
+    if config.get("config_version") != version:
+        config["config_version"] = version
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+
+def _read_config() -> dict:
+    """Read the app settings.json (same location as api.py uses)."""
+    path = _settings_path()
     try:
         if os.path.exists(path):
             return json.load(open(path, encoding="utf-8"))
@@ -226,6 +264,8 @@ def _read_config() -> dict:
 
 def main():
     os.chdir(BASE_DIR)
+
+    _migrate_settings()
 
     debug = "--debug" in sys.argv
 
