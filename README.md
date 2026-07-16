@@ -1,6 +1,18 @@
-# Relic Picker v5
+<div align="center">
+  <h1 align="center">
+    Relic Picker
+  </h1>
+  黑夜君临遗物定向选择工具。通过 Smithbox gRPC 接口修改游戏参数，实现指定词条的遗物抽取。
+</div>
 
-黑夜君临遗物定向选择工具。通过 Smithbox gRPC 接口修改游戏参数，实现指定词条的遗物抽取。
+<br/>
+
+<div align="center">
+  <a href="https://github.com/goblock2021/RelicPicker/releases"><img alt="下载数" src="https://img.shields.io/github/downloads/goblock2021/RelicPicker/total?logo=github&style=flat-square&color=1E9BFA"></a>
+  <a href="https://github.com/goblock2021/RelicPicker/releases"><img alt="Release" src="https://img.shields.io/github/v/release/goblock2021/RelicPicker?style=flat-square&color=1E9BFA"></a>
+</div>
+
+
 
 ## 使用方法
 
