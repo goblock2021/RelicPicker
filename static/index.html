@@ -266,11 +266,8 @@
     <div class="box-toolbar">
       <input type="text" id="workshop-search" placeholder="搜索工坊..." oninput="Render.workshop()" autocomplete="off">
       <span style="flex:1"></span>
-      <button onclick="Workshop.load()" title="刷新">
+      <button onclick="Workshop.load(true)" title="刷新">
         <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-refresh"/></svg>
-      </button>
-      <button onclick="Workshop.showShareModal()" title="分享当前配置" style="color:var(--green)">
-        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-upload"/></svg>
       </button>
     </div>
     <div class="dl" id="workshop-list"><div class="box-empty">正在加载...</div></div>
@@ -294,6 +291,11 @@
       <button class="tour-btn-finish" id="tour-finish" onclick="Tour.skip()">完成</button>
     </div>
   </div>
+</div>
+
+<!-- WORKSHOP DETAIL MODAL -->
+<div id="ws-detail-overlay" class="ws-detail-overlay" onclick="event.target===this && Actions.closeWsDetail()">
+  <div class="ws-detail-box" id="ws-detail-box"></div>
 </div>
 
 <!-- TOAST -->

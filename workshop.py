@@ -213,10 +213,7 @@ def poll_device_token(device_code: str) -> dict:
 
 
 # ── Allowed user fields (must match process_issue.py) ──────────────
-ALLOWED_FIELDS = [
-    "title", "description", "effects", "shop", "color",
-    "relic_id", "effect_names", "curse_names", "relic_name",
-]
+ALLOWED_FIELDS = ["title", "description", "relics"]
 
 
 # ── Issue Operations ───────────────────────────────────────────────
@@ -380,9 +377,19 @@ def fetch_all_submissions(token: Optional[str] = None) -> list[dict]:
 
             raw = json.loads(content_str)
 
-            # Flatten: merge data.* + top-level management fields
-            # Format: {id, author, created_at, version, issue_number, data: {...user fields...}}
-            inner = raw.get("data", raw)  # tolerate legacy flat format
+            # Flatten: data.relics[] for new format, legacy fallback for old
+            inner = raw.get("data", raw)
+            relics = inner.get("relics", [])
+            if not relics and "effects" in inner:
+                relics = [{
+                    "effects": inner.get("effects", []),
+                    "shop": inner.get("shop", ""),
+                    "color": inner.get("color", 0),
+                    "relic_id": inner.get("relic_id", 0),
+                    "effect_names": inner.get("effect_names", []),
+                    "curse_names": inner.get("curse_names", []),
+                    "relic_name": inner.get("relic_name", ""),
+                }]
             submission = {
                 "id": raw.get("id", ""),
                 "author": raw.get("author", ""),
@@ -391,13 +398,8 @@ def fetch_all_submissions(token: Optional[str] = None) -> list[dict]:
                 "issue_number": raw.get("issue_number", 0),
                 "title": inner.get("title", ""),
                 "description": inner.get("description", ""),
-                "effects": inner.get("effects", []),
-                "shop": inner.get("shop", ""),
-                "color": inner.get("color", 0),
-                "relic_id": inner.get("relic_id", 0),
-                "effect_names": inner.get("effect_names", []),
-                "curse_names": inner.get("curse_names", []),
-                "relic_name": inner.get("relic_name", ""),
+                "relic_count": len(relics),
+                "relics": relics,
                 "_download_url": f.get("download_url", ""),
             }
             submissions.append(submission)

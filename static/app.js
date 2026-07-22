@@ -83,8 +83,8 @@ const API = {
   async roll() { return API.call('roll'); },
   // Workshop
   async workshopList() { return API.call('workshop_list'); },
-  async workshopShare(title, desc) { return API.call('workshop_share', title, desc); },
-  async workshopShareBox(idx, title, desc) { return API.call('workshop_share_box', idx, title, desc); },
+  async workshopShare(title, desc, relicIds) { return API.call('workshop_share', title, desc, relicIds ?? null); },
+  async workshopShareFolder(folderIdx, title, desc) { return API.call('workshop_share_folder', folderIdx, title, desc); },
   async workshopDelete(id) { return API.call('workshop_delete', id); },
   async workshopValidateToken(token) { return API.call('workshop_validate_token', token || ''); },
   async workshopStartAuth() { return API.call('workshop_start_auth'); },
@@ -308,7 +308,8 @@ const Render = {
           <span style="flex:1"></span>
           <button class="box-folder-btn" onclick="event.stopPropagation();Actions.renameFolder(${fi})" title="重命名"><svg viewBox="0 0 24 24" width="11" height="11"><use href="#icon-edit"/></svg></button>
           <button class="box-folder-btn" onclick="event.stopPropagation();Actions.batchApplyFolder(${fi})" title="批量应用此文件夹"><svg viewBox="0 0 24 24" width="11" height="11"><use href="#icon-batch"/></svg></button>
-                    <button class="box-folder-btn" onclick="event.stopPropagation();Actions.deleteFolder(${fi})" title="删除文件夹"><svg viewBox="0 0 24 24" width="11" height="11"><use href="#icon-close"/></svg></button>
+          <button class="box-folder-btn" onclick="event.stopPropagation();Workshop.showShareModal(${fi})" title="分享到工坊"><svg viewBox="0 0 24 24" width="11" height="11"><use href="#icon-upload"/></svg></button>
+          <button class="box-folder-btn" onclick="event.stopPropagation();Actions.deleteFolder(${fi})" title="删除文件夹"><svg viewBox="0 0 24 24" width="11" height="11"><use href="#icon-close"/></svg></button>
         </div>
         <div class="box-folder-items" style="${isOpen ? '' : 'display:none'}">`;
       for (const it of folderItems) {
@@ -451,79 +452,33 @@ const Render = {
   workshop() {
     const list = document.getElementById('workshop-list');
     document.getElementById('workshop-count').textContent = String(State.workshopItems.length);
-
-    if (!State.workshopItems.length) {
-      list.innerHTML = '<div class="box-empty">创意工坊暂无内容</div>';
-      return;
-    }
-
+    if (!State.workshopItems.length) { list.innerHTML = '<div class="box-empty">创意工坊暂无内容</div>'; return; }
     const q = (document.getElementById('workshop-search')?.value || '').toLowerCase();
-    const SHOP_NAMES = {
-      'normal-old':'旧版普通','normal-new':'新版普通',
-      'deep-old':'旧版深夜','deep-new':'新版深夜',
-      'unknown':'未知'
-    };
-
     let items = State.workshopItems;
     if (q) {
       items = items.filter(s => {
-        const text = (s.title || '') + ' ' + (s.author || '') + ' ' +
-          (s.description || '') + ' ' + (s.effect_names || []).join(' ') +
-          ' ' + (s.relic_name || '');
-        return text.toLowerCase().includes(q);
+        let t = (s.title||'') + ' ' + (s.author||'') + ' ' + (s.description||'');
+        for (const r of (s.relics||[])) t += ' ' + (r.effect_names||[]).join(' ') + ' ' + (r.relic_name||'');
+        return t.toLowerCase().includes(q);
       });
     }
-
-    if (!items.length) {
-      list.innerHTML = '<div class="box-empty">没有匹配的工坊条目</div>';
-      return;
-    }
-
-    // Group by shop
-    const groups = {};
-    for (const s of items) {
-      const key = s.shop || 'unknown';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
-    }
-
-    const COL = ['火','水','光','幽'];
-
+    if (!items.length) { list.innerHTML = '<div class="box-empty">没有匹配的工坊条目</div>'; return; }
     let html = '';
-    for (const [shop, groupItems] of Object.entries(groups)) {
-      html += `<div class="box-group">
-        <div class="box-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
-          <span class="bgh-caret">▾</span>
-          ${SHOP_NAMES[shop]||shop}
-          <span class="bgh-count">${groupItems.length}</span>
+    for (const s of items) {
+      const isOwn = State.workshopUsername && s.author && s.author.toLowerCase() === State.workshopUsername.toLowerCase();
+      const count = s.relic_count || (s.relics||[]).length || 0;
+      html += `<div class="box-item workshop-item" onclick="Actions.showWorkshopDetail('${s.id}')">
+        <span class="bi-dot"><svg viewBox="0 0 24 24" width="12" height="12" style="color:var(--gold)"><use href="#icon-box"/></svg></span>
+        <div class="bi-main">
+          <div class="bi-line" style="font-weight:600;color:var(--text)">${s.title||'未命名'} <span style="font-weight:400;color:var(--faint);font-size:11px">${count}个遗物</span></div>
+          ${s.description ? `<div class="wi-desc">${s.description}</div>` : ''}
+          <div class="wi-meta"><span class="wi-author">${s.author||'匿名'}</span><span class="wi-date">${(s.created_at||'').slice(0,10)}</span></div>
         </div>
-        <div class="box-group-items">`;
-      for (const s of groupItems) {
-        const effectLines = (s.effect_names||[]).map(n => `<div class="bi-line">${n}</div>`).join('');
-        const curseLines = (s.curse_names||[]).map(n => `<div class="bi-line curse">诅咒: ${n}</div>`).join('');
-        const isOwn = State.workshopUsername && s.author &&
-          s.author.toLowerCase() === State.workshopUsername.toLowerCase();
-        html += `<div class="box-item workshop-item">
-          <span class="bi-dot"><span class="color-dot dot-${s.color>=0?s.color:2}"></span></span>
-          <div class="bi-main">
-            <div class="bi-line" style="font-weight:600;color:var(--text)">${s.title||'未命名配置'}</div>
-            ${s.relic_name ? `<div class="bi-line" style="color:var(--gold)">[${s.relic_id}] ${s.relic_name}</div>` : ''}
-            <div class="bi-effects">${effectLines||'<div class="bi-line">(空)</div>'}</div>
-            ${curseLines ? `<div class="bi-curses">${curseLines}</div>` : ''}
-            <div class="wi-meta">
-              <span class="wi-author" title="作者">${s.author||'匿名'}</span>
-              <span class="wi-date">${(s.created_at||'').slice(0,10)}</span>
-            </div>
-            ${s.description ? `<div class="wi-desc">${s.description}</div>` : ''}
-          </div>
-          <div class="wi-actions">
-            <button class="wi-btn wi-btn-apply" onclick="event.stopPropagation();Actions.applyWorkshopItem('${s.id}')" title="加载配置">应用</button>
-            <button class="wi-btn wi-btn-add" onclick="event.stopPropagation();Actions.addWorkshopToBox('${s.id}')" title="加入遗物盒">+盒</button>
-            ${isOwn ? `<button class="wi-btn wi-btn-del" onclick="event.stopPropagation();Actions.deleteWorkshopSubmission('${s.id}')" title="删除分享">删除</button>` : ''}
-          </div>
-        </div>`;
-      }
-      html += `</div></div>`;
+        <div class="wi-actions">
+          <button class="wi-btn wi-btn-add" onclick="event.stopPropagation();Actions.addWorkshopToBox('${s.id}')">加入遗物盒</button>
+          ${isOwn ? `<button class="wi-btn wi-btn-del" onclick="event.stopPropagation();Actions.deleteWorkshopSubmission('${s.id}')">删除</button>` : ''}
+        </div>
+      </div>`;
     }
     list.innerHTML = html;
   },
@@ -1211,66 +1166,22 @@ const Actions = {
     }
   },
 
-  async applyWorkshopItem(id) {
-    const sub = State.workshopItems.find(s => s.id === id);
-    if (!sub) { Toast.show('找不到该配置'); return; }
-
-    // Close workshop drawer
-    document.getElementById('workshop-overlay').classList.remove('on');
-
-    // Switch shop
-    const saved = State.effects;
-    for (let i = saved.length - 1; i >= 0; i--) await API.removeEffect(i);
-    await State.refresh();
-
-    if (sub.shop && sub.shop !== State.shop) {
-      const chip = document.querySelector(`[data-shop="${sub.shop}"]`);
-      if (chip) await Actions.setShop(chip);
-      else await API.setShop(sub.shop);
-      await State.refresh();
-    }
-
-    // Add effects
-    for (const e of (sub.effects || [])) {
-      await API.addEffect(e.eff_id);
-      await State.refresh();
-      if (e.curse_id) {
-        const lastIdx = State.effects.length - 1;
-        await API.setCurse(lastIdx, e.curse_id);
-        await State.refresh();
-      }
-    }
-
-    // Restore color
-    if (sub.color !== undefined && sub.color !== -1) {
-      await API.setColor(sub.color);
-    }
-    // Restore relic selection
-    if (sub.relic_id) {
-      await API.setRelic(sub.relic_id);
-    }
-
-    await State.refresh();
-    Render.all();
-    Toast.show(`已加载: ${sub.title || '未命名配置'}`);
-  },
-
   async addWorkshopToBox(id) {
     const sub = State.workshopItems.find(s => s.id === id);
-    if (!sub) { Toast.show('找不到该配置'); return; }
-
-    // Build import text in v4 format
-    const effIds = (sub.effects || []).map(e => String(e.eff_id)).join(',');
-    const curseIds = (sub.effects || []).filter(e => e.curse_id).map(e => String(e.curse_id)).join(',');
-    const relicId = sub.relic_id || 0;
-    let line = `${relicId}:${effIds}`;
-    if (curseIds) line += `:${curseIds}`;
-
-    const result = await API.importBox(line);
-    const box2 = await API.getBox(); State.boxItems = box2.items || []; State.boxFolders = box2.folders || []; Render.box();
+    if (!sub || !sub.relics) { Toast.show('找不到该配置'); return; }
+    let count = 0;
+    for (const r of sub.relics) {
+      const effIds = (r.effects||[]).map(e => String(e.eff_id)).join(',');
+      const curseIds = (r.effects||[]).filter(e => e.curse_id).map(e => String(e.curse_id)).join(',');
+      let line = `${r.relic_id||0}:${effIds}`;
+      if (curseIds) line += `:${curseIds}`;
+      await API.importBox(line);
+      count++;
+    }
+    const box = await API.getBox(); State.boxItems = box.items || []; State.boxFolders = box.folders || [];
     Render.box();
-    document.getElementById('box-badge').textContent = State.boxItems.length;
-    Toast.show(result.message || '已加入遗物盒');
+    document.getElementById('box-badge').textContent = (box.items||[]).length;
+    Toast.show(`已导入 ${count} 个遗物`);
   },
 
   deleteWorkshopSubmission(id) {
@@ -1283,12 +1194,55 @@ const Actions = {
     }
   },
 
+  showWorkshopDetail(id) {
+    const sub = State.workshopItems.find(s => s.id === id);
+    if (!sub) return;
+    const relics = sub.relics || [];
+    const COL = ['火','水','光','幽'];
+    const SHOP_NAMES = {'normal-old':'旧版普通','normal-new':'新版普通','deep-old':'旧版深夜','deep-new':'新版深夜'};
+    let h = `<div class="ws-detail">
+      <div class="ws-detail-header">
+        <div class="ws-detail-title">${Render.esc(sub.title||'未命名')}<span class="ws-detail-count"> · ${relics.length} 个遗物</span></div>
+        <button class="icon-btn" onclick="Actions.closeWsDetail()"><svg viewBox="0 0 24 24" width="16" height="16"><use href="#icon-close"/></svg></button>
+      </div>
+      <div class="ws-detail-scroll">`;
+    if (sub.description) h += `<div class="ws-detail-desc">${Render.esc(sub.description)}</div>`;
+    h += `<div class="ws-detail-meta">${Render.esc(sub.author||'匿名')} · ${(sub.created_at||'').slice(0,10)}</div>
+      <div class="ws-detail-divider"></div><div class="ws-detail-relics">`;
+    for (const r of relics) {
+      const effHtml = (r.effect_names||[]).map(n => `<div class="ws-relic-eff">${Render.esc(n)}</div>`).join('');
+      const curseHtml = (r.curse_names||[]).map(n => `<div class="ws-relic-curse">诅咒: ${Render.esc(n)}</div>`).join('');
+      const shopName = SHOP_NAMES[r.shop] || r.shop || '';
+      h += `<div class="ws-relic-card">
+        <div class="ws-relic-head">
+          <span class="color-dot dot-${r.color>=0?r.color:2}"></span>
+          <span class="ws-relic-name">[${r.relic_id}] ${Render.esc(r.relic_name||'?')}</span>
+          <span style="flex:1"></span>
+          <span class="ws-relic-shop">${shopName}</span>
+        </div>
+        <div class="ws-relic-body">${effHtml||'<div style="color:var(--faint);font-size:11px">(无效果)</div>'}${curseHtml}</div>
+      </div>`;
+    }
+    h += `</div></div>
+      <div class="ws-detail-divider"></div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel" onclick="Actions.closeWsDetail()">关闭</button>
+        <button class="confirm-ok" onclick="Actions.addWorkshopToBox('${sub.id}');Actions.closeWsDetail()">加入遗物盒 (${relics.length})</button>
+      </div></div>`;
+    document.getElementById('ws-detail-box').innerHTML = h;
+    document.getElementById('ws-detail-overlay').classList.add('on');
+  },
+
+  closeWsDetail() {
+    document.getElementById('ws-detail-overlay').classList.remove('on');
+  },
+
   openShareModalBoxId(itemId) {
     const b = State.boxItems.find(it => it.id === itemId);
     if (!b) return;
-    window._shareBoxText = `${b.relic_id||0}:${(b.effects||[]).map(e=>e.eff_id).join(',')}`;
-    window._shareBoxTitle = (b.effect_names||[]).join(' / ');
-    Workshop.showShareModal(null);
+    window._wsShareItemId = itemId;
+    window._wsShareTitle = (b.effect_names||[]).join(' / ');
+    Workshop.showShareModal('item');
   },
 
   // ── Folder Actions ──────────────────────────────────────────────
@@ -1296,7 +1250,7 @@ const Actions = {
   async createFolder(name) {
     const html = `<div class="cm-title">新建文件夹</div>
       <div style="margin:8px 0">
-        <input id="folder-name-input" type="text" placeholder="文件夹名称（如：法师火build）" style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px" maxlength="40">
+        <input id="folder-name-input" type="text" placeholder="文件夹名称" style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px" maxlength="40">
       </div>
       <div class="confirm-actions" style="justify-content:flex-end;gap:8px">
         <button class="confirm-cancel" onclick="Modal.cancel()">取消</button>
@@ -1466,10 +1420,10 @@ document.addEventListener('keydown', e => {
 const Workshop = {
   _submissions: [],
 
-  async load() {
+  async load(force) {
     Render.workshopLoading();
     try {
-      const result = await API.workshopList();
+      const result = force ? await API.call('workshop_refresh') : await API.workshopList();
       if (result.submissions) {
         State.workshopItems = result.submissions;
         Render.workshop();
@@ -1481,80 +1435,31 @@ const Workshop = {
     }
   },
 
-  async share(title, desc) {
-    // Share current effects config
-    Modal.showRaw(`<div class="cm-title">分享到创意工坊</div>
-      <div style="text-align:center;padding:20px">
-        <div class="startup-spinner" style="margin:0 auto 12px"></div>
-        <div style="font-size:13px;color:var(--muted)">正在提交...</div>
-      </div>`);
-    try {
-      const result = await API.workshopShare(title, desc);
-      if (result.success) {
-        Modal.showRaw(`<div class="cm-title">分享成功</div>
-          <div style="padding:12px;text-align:center">
-            <div style="font-size:13px;color:var(--green);margin-bottom:8px">✓ 提交已创建</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:12px">等待 GitHub Actions 审核通过后自动发布</div>
-            <div class="confirm-actions" style="justify-content:center;gap:8px">
-              <button class="confirm-cancel" onclick="Modal.cancel()">关闭</button>
-              <button class="confirm-ok" onclick="Actions.openWorkshopUrl('${result.issue_url||''}');Modal.cancel()">查看</button>
-            </div>
-          </div>`);
-        Toast.show('分享已提交');
-        // Refresh workshop list after a delay
-        setTimeout(() => { Workshop.load(); }, 3000);
-      } else {
-        // Check if no token
-        if (result.error && result.error.includes('Token')) {
-          Modal.cancel();
-          Workshop.showTokenPrompt(() => Workshop.share(title, desc));
-          return;
-        }
-        Modal.showRaw(`<div class="cm-title">分享失败</div>
-          <div style="padding:12px;text-align:center;color:var(--red);font-size:13px">${result.error||'未知错误'}</div>
-          <div class="confirm-actions" style="justify-content:center"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button></div>`);
-      }
-    } catch (e) {
-      Modal.showRaw(`<div class="cm-title">分享失败</div>
-        <div style="padding:12px;text-align:center;color:var(--red);font-size:13px">${e.message||'未知错误'}</div>
-        <div class="confirm-actions" style="justify-content:center"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button></div>`);
-    }
+  async _doShareCurrent(title, desc) {
+    Workshop._showSharing();
+    try { const r = await API.workshopShare(title, desc, null); Workshop._handleShareResult(r); } catch(e) {}
   },
-
-  async shareBoxItem(idx, title, desc) {
-    Modal.showRaw(`<div class="cm-title">分享到创意工坊</div>
-      <div style="text-align:center;padding:20px">
-        <div class="startup-spinner" style="margin:0 auto 12px"></div>
-        <div style="font-size:13px;color:var(--muted)">正在提交...</div>
-      </div>`);
-    try {
-      const result = await API.workshopShareBox(idx, title, desc);
-      if (result.success) {
-        Modal.showRaw(`<div class="cm-title">分享成功</div>
-          <div style="padding:12px;text-align:center">
-            <div style="font-size:13px;color:var(--green);margin-bottom:8px">✓ 提交已创建</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:12px">等待 GitHub Actions 审核通过后自动发布</div>
-            <div class="confirm-actions" style="justify-content:center;gap:8px">
-              <button class="confirm-cancel" onclick="Modal.cancel()">关闭</button>
-              <button class="confirm-ok" onclick="Actions.openWorkshopUrl('${result.issue_url||''}');Modal.cancel()">查看</button>
-            </div>
-          </div>`);
-        Toast.show('分享已提交');
-        setTimeout(() => { Workshop.load(); }, 3000);
-      } else {
-        if (result.error && result.error.includes('Token')) {
-          Modal.cancel();
-          Workshop.showTokenPrompt(() => Workshop.shareBoxItem(idx, title, desc));
-          return;
-        }
-        Modal.showRaw(`<div class="cm-title">分享失败</div>
-          <div style="padding:12px;text-align:center;color:var(--red);font-size:13px">${result.error||'未知错误'}</div>
-          <div class="confirm-actions" style="justify-content:center"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button></div>`);
-      }
-    } catch (e) {
-      Modal.showRaw(`<div class="cm-title">分享失败</div>
-        <div style="padding:12px;text-align:center;color:var(--red);font-size:13px">${e.message||'未知错误'}</div>
-        <div class="confirm-actions" style="justify-content:center"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button></div>`);
+  async _doShareItem(itemId, title, desc) {
+    Workshop._showSharing();
+    try { const r = await API.workshopShare(title, desc, [itemId]); Workshop._handleShareResult(r); } catch(e) {}
+  },
+  async _doShareFolder(folderIdx, title, desc) {
+    Workshop._showSharing();
+    try { const r = await API.workshopShareFolder(folderIdx, title, desc); Workshop._handleShareResult(r); } catch(e) {}
+  },
+  _showSharing() {
+    Modal.showRaw(`<div class="cm-title">分享到创意工坊</div><div style="text-align:center;padding:20px"><div class="startup-spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:var(--muted)">正在提交...</div></div>`);
+  },
+  _handleShareResult(result) {
+    if (result.success) {
+      Modal.showRaw(`<div class="cm-title">分享成功</div><div style="padding:12px;text-align:center"><div style="font-size:13px;color:var(--green);margin-bottom:8px">✓ 提交已创建</div><div style="font-size:11px;color:var(--muted);margin-bottom:12px">等待审核通过后自动发布</div><div class="confirm-actions" style="justify-content:center;gap:8px"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button><button class="confirm-ok" onclick="Actions.openWorkshopUrl('${result.issue_url||''}');Modal.cancel()">查看</button></div></div>`);
+      Toast.show('分享已提交');
+      setTimeout(() => { Workshop.load(); }, 3000);
+    } else if (result.error && result.error.includes('Token')) {
+      Modal.cancel();
+      Workshop.showTokenPrompt(() => {});
+    } else {
+      Modal.showRaw(`<div class="cm-title">分享失败</div><div style="padding:12px;text-align:center;color:var(--red);font-size:13px">${result.error||'未知错误'}</div><div class="confirm-actions" style="justify-content:center"><button class="confirm-cancel" onclick="Modal.cancel()">关闭</button></div>`);
     }
   },
 
@@ -1605,45 +1510,54 @@ const Workshop = {
     }
   },
 
-  showShareModal(boxIdx) {
-    const isBox = boxIdx !== undefined && boxIdx !== null;
-    const b = isBox ? State.boxItems[boxIdx] : null;
+  showShareModal(folderIdx) {
+    // folderIdx: number=box folder, 'item'=single item, undefined=current config
+    const hasFolders = State.boxFolders && State.boxFolders.length > 0;
     let preview;
-    if (isBox && b) {
-      preview = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">${((b.effect_names||[]).join(' / ') || '(空)')}</div>`;
-    } else if (window._shareBoxTitle) {
-      preview = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">${window._shareBoxTitle}</div>`;
+    if (folderIdx === 'item') {
+      preview = `单个遗物: ${window._wsShareTitle || '?'}`;
+    } else if (folderIdx !== undefined && folderIdx !== null) {
+      preview = `文件夹: ${State.boxFolders[folderIdx]?.name || '?'} (${(State.boxFolders[folderIdx]?.item_ids||[]).length} 遗物)`;
     } else {
-      preview = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">${State.effects.map(e => e.name||`#${e.eff_id}`).join(' / ') || '(空)'}</div>`;
+      preview = `当前配置 (${State.effects.length} 效果)`;
     }
 
-    const html = `<div class="cm-title">分享到创意工坊</div>
-      ${preview}
-      <div style="margin-bottom:8px">
+    let html = `<div class="cm-title">分享到创意工坊</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${preview}</div>`;
+    if (hasFolders && folderIdx === undefined) {
+      html += '<div style="font-size:11px;color:var(--faint);margin-bottom:6px">或选择遗物盒文件夹：</div>';
+      for (let fi = 0; fi < State.boxFolders.length; fi++) {
+        const f = State.boxFolders[fi];
+        html += `<div class="import-opt" onclick="Workshop.showShareModal(${fi});Modal.cancel()"><div class="io-icon">📁</div><div class="io-text"><div class="io-label">${Render.esc(f.name)}</div><div class="io-desc">${(f.item_ids||[]).length} 个遗物</div></div></div>`;
+      }
+      html += '<div style="font-size:11px;color:var(--faint);margin:6px 0">将作为一组提交到工坊</div>';
+    }
+    html += `<div style="margin-bottom:8px">
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">标题</label>
-        <input id="ws-title" type="text" placeholder="给配置起个名字..." value="${window._shareBoxTitle ? Render.esc(window._shareBoxTitle) : ''}" style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px" maxlength="60">
+        <input id="ws-title" type="text" placeholder="给配置起个名字..." style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px" maxlength="60">
       </div>
       <div style="margin-bottom:8px">
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">描述 (可选)</label>
-        <textarea id="ws-desc" placeholder="简单描述一下这个配置..." style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;resize:none;height:60px" maxlength="200"></textarea>
+        <textarea id="ws-desc" placeholder="简单描述一下..." style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;resize:none;height:60px" maxlength="200"></textarea>
       </div>
       <div class="confirm-actions" style="justify-content:flex-end;gap:8px">
         <button class="confirm-cancel" onclick="Modal.cancel()">取消</button>
-        <button class="confirm-ok" onclick="Workshop.doShare(${isBox?boxIdx:'null'})">分享</button>
+        <button class="confirm-ok" onclick="Workshop.doShare(${folderIdx !== undefined && folderIdx !== null ? (typeof folderIdx==='string'?`'${folderIdx}'`:folderIdx) : 'null'})">分享</button>
       </div>`;
     Modal.showRaw(html);
-    window._shareBoxTitle = null; window._shareBoxText = null;
   },
 
-  doShare(boxIdx) {
+  doShare(folderIdx) {
     const title = document.getElementById('ws-title')?.value.trim() || '';
     const desc = document.getElementById('ws-desc')?.value.trim() || '';
     if (!title) { Toast.show('请输入标题'); return; }
     Modal.cancel();
-    if (boxIdx !== null && boxIdx !== undefined) {
-      Workshop.shareBoxItem(boxIdx, title, desc);
+    if (folderIdx === 'item') {
+      Workshop._doShareItem(window._wsShareItemId, title, desc);
+    } else if (folderIdx != null && folderIdx !== 'null') {
+      Workshop._doShareFolder(parseInt(folderIdx), title, desc);
     } else {
-      Workshop.share(title, desc);
+      Workshop._doShareCurrent(title, desc);
     }
   },
 

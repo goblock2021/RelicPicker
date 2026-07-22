@@ -370,3 +370,27 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .wi-btn-add{border-color:var(--blue-border);color:var(--blue);background:var(--blue-bg)}
 .wi-btn-del{border-color:var(--red-border);color:var(--red);background:var(--red-bg)}
 
+/* ═══ WORKSHOP DETAIL ═══ */
+.ws-detail-overlay{display:none;position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.55);align-items:center;justify-content:center}
+.ws-detail-overlay.on{display:flex}
+.ws-detail-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;width:480px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.ws-detail-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0}
+.ws-detail-title{font-size:14px;font-weight:600;color:var(--text);flex:1}
+.ws-detail-count{font-weight:400;color:var(--faint);font-size:11px}
+.ws-detail-scroll{flex:1;overflow-y:auto;min-height:0;max-height:60vh}
+.ws-detail-desc{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:4px}
+.ws-detail-meta{font-size:10px;color:var(--faint);margin-bottom:12px}
+.ws-detail-divider{border-top:1px solid var(--border);margin:0}
+.ws-detail-relics{padding:12px 0}
+.ws-detail .confirm-actions{flex-shrink:0;margin-top:12px}
+.ws-relic-card{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;transition:border-color .15s}
+.ws-relic-card:last-child{margin-bottom:0}
+.ws-relic-card:hover{border-color:var(--muted)}
+.ws-relic-head{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.ws-relic-head .color-dot{flex-shrink:0}
+.ws-relic-name{font-size:12px;font-weight:600;color:var(--gold)}
+.ws-relic-shop{font-size:10px;color:var(--muted);padding:1px 6px;border-radius:8px;border:1px solid var(--border);flex-shrink:0}
+.ws-relic-body{font-size:11px;line-height:1.5;color:var(--text)}
+.ws-relic-eff{padding:1px 0}
+.ws-relic-curse{font-size:10px;color:var(--curse-picker-filled-color);padding-top:2px}
+

@@ -1090,7 +1090,6 @@ class RelicPickerAPI:
         return ""
 
     def workshop_list(self) -> dict:
-        """Browse all workshop submissions (anonymous, no token needed)."""
         try:
             subs = fetch_all_submissions()
             return {"submissions": subs}
@@ -1101,90 +1100,56 @@ class RelicPickerAPI:
             log.error("Workshop list failed: %s", e)
             return {"error": str(e)}
 
-    def workshop_share(self, title: str, description: str) -> dict:
-        """Share current effects config to workshop. Requires github_token."""
-        token = self._get_token()
-        if not token:
-            return {"error": "请先在设置中配置 GitHub Token"}
+    def workshop_refresh(self) -> dict:
+        invalidate_cache()
+        return self.workshop_list()
 
-        # Get effect/curse names from current state
-        effect_names = []
-        curse_names = []
-        for e in self.effects:
+    def _build_relic_data(self, item) -> dict:
+        effect_names, curse_names = [], []
+        for e in item.effects:
             eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
             effect_names.append(eff.name if eff else f"?{e['eff_id']}")
             if e.get("curse_id"):
-                curse = self._loader.get_curse(e["curse_id"]) if self._loader else None
-                curse_names.append(curse.name if curse else f"?{e['curse_id']}")
+                c = self._loader.get_curse(e["curse_id"]) if self._loader else None
+                curse_names.append(c.name if c else f"?{e['curse_id']}")
+        rname = ""
+        if item.relic_id and self._loader:
+            r = self._loader.get_relic(item.relic_id)
+            rname = r.name if r else (self._loader.lookup_relic_name(item.relic_id) or "")
+        return {"effects": item.effects, "shop": item.shop, "color": item.color,
+                "relic_id": item.relic_id, "effect_names": effect_names,
+                "curse_names": curse_names, "relic_name": rname}
 
-        # Get relic info
-        match = self._get_selected_match()
-        relic_id = match.relic.id if match else 0
-        relic_name = match.relic.name if match else ""
-
-        data = {
-            "title": title,
-            "description": description,
-            "effects": self.effects.copy(),
-            "shop": self.shop,
-            "color": self.color,
-            "relic_id": relic_id,
-            "effect_names": effect_names,
-            "curse_names": curse_names,
-            "relic_name": relic_name,
-        }
-
-        try:
-            result = share_submission(token, data)
-            # Invalidate the workshop cache in api layer too
-            invalidate_cache()
-            return {"success": True, **result}
-        except WorkshopAuthError as e:
-            return {"error": f"GitHub Token 无效: {e}"}
-        except WorkshopError as e:
-            return {"error": str(e)}
-
-    def workshop_share_box(self, index: int, title: str, description: str) -> dict:
-        """Share a box item to workshop. Requires github_token."""
+    def workshop_share(self, title: str, description: str, relic_ids: list = None) -> dict:
         token = self._get_token()
         if not token:
             return {"error": "请先在设置中配置 GitHub Token"}
-
-        if not (0 <= index < len(self.box)):
-            return {"error": "无效的条目"}
-
-        b = self.box[index]
-
-        # Resolve names
-        effect_names = []
-        curse_names = []
-        for e in b.effects:
-            eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
-            effect_names.append(eff.name if eff else f"?{e['eff_id']}")
-            if e.get("curse_id"):
-                curse = self._loader.get_curse(e["curse_id"]) if self._loader else None
-                curse_names.append(curse.name if curse else f"?{e['curse_id']}")
-
-        relic_name = ""
-        if b.relic_id and self._loader:
-            r = self._loader.get_relic(b.relic_id)
-            if r:
-                relic_name = r.name
-            else:
-                relic_name = self._loader.lookup_relic_name(b.relic_id) or ""
-
-        data = {
-            "title": title,
-            "description": description,
-            "effects": b.effects,
-            "shop": b.shop,
-            "color": b.color,
-            "relic_id": b.relic_id,
-            "effect_names": effect_names,
-            "curse_names": curse_names,
-            "relic_name": relic_name,
-        }
-
+        relics = []
+        if relic_ids:
+            for rid in relic_ids:
+                for b in self.box:
+                    if b.id == rid:
+                        relics.append(self._build_relic_data(b))
+                        break
+        else:
+            match = self._get_selected_match()
+            rid = match.relic.id if match else 0
+            eff_names, curse_names = [], []
+            for e in self.effects:
+                eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
+                eff_names.append(eff.name if eff else f"?{e['eff_id']}")
+                if e.get("curse_id"):
+                    c = self._loader.get_curse(e["curse_id"]) if self._loader else None
+                    curse_names.append(c.name if c else f"?{e['curse_id']}")
+            rname = ""
+            if rid and self._loader:
+                r = self._loader.get_relic(rid)
+                rname = r.name if r else (self._loader.lookup_relic_name(rid) or "")
+            relics.append({"effects": self.effects.copy(), "shop": self.shop, "color": self.color,
+                "relic_id": rid, "effect_names": eff_names, "curse_names": curse_names, "relic_name": rname})
+        if not relics:
+            return {"error": "没有可分享的遗物"}
+        data = {"title": title, "description": description, "relics": relics}
         try:
             result = share_submission(token, data)
             invalidate_cache()
@@ -1193,6 +1158,12 @@ class RelicPickerAPI:
             return {"error": f"GitHub Token 无效: {e}"}
         except WorkshopError as e:
             return {"error": str(e)}
+
+    def workshop_share_folder(self, folder_index: int, title: str, description: str) -> dict:
+        if not (0 <= folder_index < len(self.folders)):
+            return {"error": "无效的文件夹"}
+        ids = self.folders[folder_index].item_ids
+        return self.workshop_share(title, description, relic_ids=ids)
 
     def workshop_delete(self, submission_id: str) -> dict:
         """Delete own submission from workshop. Requires github_token."""
