@@ -72,14 +72,12 @@ def get_html() -> str:
     css = _read_static("app.css")
     js = _read_static("app.js")
 
-    # Inline CSS
     if css:
         html = html.replace(
             '<link rel="stylesheet" href="app.css">',
             f"<style>\n{css}\n</style>"
         )
 
-    # Inline JS
     if js:
         html = html.replace(
             '<script src="app.js"></script>',

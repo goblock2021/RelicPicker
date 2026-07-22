@@ -163,16 +163,20 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .pi-tag.dlc{background:var(--orange-bg);color:var(--orange)}
 
 /* ═══ BOX DRAWER ═══ */
-#box-overlay{position:fixed;inset:0;z-index:930;pointer-events:none;visibility:hidden;transition:visibility 0s .25s}
-#box-overlay.on{pointer-events:auto;visibility:visible;transition:visibility 0s 0s}
-#box-overlay .backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s}
-#box-overlay.on .backdrop{background:rgba(0,0,0,.4)}
-#box-drawer{position:relative;z-index:1;width:400px;height:100%;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transform:translateX(-100%);transition:transform .25s ease}
-#box-overlay.on #box-drawer{transform:translateX(0)}
-#box-drawer .dh{display:flex;justify-content: space-between;align-items:baseline;gap:10px;padding:16px 16px;border-bottom:1px solid var(--border)}
-#box-drawer .dh-left{display:flex;align-content: center;align-items: center;}
-#box-drawer .dh h2{font-size:14px;font-weight:600;flex:1;align-self:center}
-#box-drawer .dh-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:10px}
+/* ═══ DRAWERS (shared) ═══ */
+.drawer-overlay{position:fixed;inset:0;z-index:930;pointer-events:none;visibility:hidden;transition:visibility 0s .25s}
+.drawer-overlay.on{pointer-events:auto;visibility:visible;transition:visibility 0s 0s}
+.drawer-overlay .backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s}
+.drawer-overlay.on .backdrop{background:rgba(0,0,0,.4)}
+.drawer-panel{position:relative;z-index:1;width:420px;max-width:92vw;height:100%;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transform:translateX(-100%);transition:transform .25s ease}
+.drawer-overlay.on .drawer-panel{transform:translateX(0)}
+/* Workshop drawer slides from right */
+#workshop-overlay .drawer-panel{position:absolute;top:0;right:0;border-right:none;border-left:1px solid var(--border);transform:translateX(100%)}
+#workshop-overlay.on .drawer-panel{transform:translateX(0)}
+.drawer-panel .dh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:16px 16px;border-bottom:1px solid var(--border)}
+.drawer-panel .dh-left{display:flex;align-content:center;align-items:center}
+.drawer-panel .dh h2{font-size:14px;font-weight:600;flex:1;align-self:center}
+.drawer-panel .dh-count{font-size:12px;color:var(--muted);font-weight:600;margin-left:10px}
 .box-toolbar{display:flex;align-items:center;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border)}
 .box-toolbar input{flex:1;min-width:0;padding:6px 10px;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);outline:none}
 .box-toolbar input:focus{border-color:var(--muted)}
@@ -181,7 +185,7 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 .box-toolbar button:hover{color:var(--text);border-color:var(--muted)}
 .box-toolbar button.box-batch-btn{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue);padding:5px 12px;font-family:var(--font);font-size:11px;font-weight:600;line-height:1.4}
 .box-toolbar button.box-batch-btn:hover{background:var(--blue-hover)}
-#box-drawer .dl{flex:1;overflow-y:auto;padding:4px 0}
+.drawer-panel .dl{flex:1;overflow-y:auto;padding:4px 0;position:relative}
 .box-empty{text-align:center;padding:40px 20px;color:var(--faint);font-size:13px}
 .box-loading{text-align:center;padding:60px 20px}
 .box-group{margin-top:8px}
@@ -325,4 +329,44 @@ svg{display:inline-block;fill:currentColor;flex-shrink:0;vertical-align:-2px}
 /* ═══ TOAST ═══ */
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:16px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text);z-index:200;pointer-events:none;opacity:0;transition:opacity .2s}
 #toast.on{opacity:1}
+
+/* ═══ BOX FOLDERS ═══ */
+.box-folder{margin:4px 0}
+.box-folder-header{display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;border-radius:6px;background:var(--bg);border:1px solid transparent;transition:.15s;user-select:none}
+.box-folder-header:hover{border-color:var(--gold-border);background:var(--gold-bg)}
+.box-folder-icon{font-size:14px}
+.box-folder-name{font-size:13px;font-weight:600;color:var(--text)}
+.box-folder-btn{background:none;border:none;cursor:pointer;font-size:11px;padding:2px 4px;opacity:0;transition:.15s;color:var(--faint)}
+.box-folder-header:hover .box-folder-btn{opacity:1}
+.box-folder-btn:hover{opacity:1;color:var(--text)}
+.box-folder-btn:hover svg{color:var(--text)}
+.box-folder-items{margin-left:8px;padding-left:8px;border-left:2px solid var(--gold-border)}
+/* Hide date display */
+.box-item .bi-date{display:none}
+/* Box item action buttons (shared) */
+.bi-del,.bi-move-out,.bi-share{flex-shrink:0;align-self:center;background:none;border:none;color:var(--faint);cursor:pointer;padding:2px;opacity:0;transition:.15s;line-height:0}
+.box-item:hover .bi-del,.box-item:hover .bi-move-out,.box-item:hover .bi-share{opacity:1}
+.bi-del:hover,.bi-move-out:hover,.bi-share:hover{color:var(--text)}
+.bi-move-out{font-size:11px}
+.bi-share{margin-left:auto}
+.box-item.dragging{opacity:.5;outline:2px dashed var(--gold)}
+.drawer-panel .dl{user-select:none;-webkit-user-select:none}
+.drag-ghost{position:fixed;z-index:9999;pointer-events:none;padding:6px 10px;background:var(--card);border:1px solid var(--gold-border);border-radius:6px;font-size:11px;color:var(--text);box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:260px;transform:translate(8px,-8px)}
+.drag-ghost .bi-line{word-break:break-all}
+.drag-ghost .bi-line.curse{font-size:10px;color:var(--curse-picker-filled-color)}
+.sortable-ghost{opacity:.4}
+.sortable-chosen{opacity:.8;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+
+/* ═══ WORKSHOP ITEMS ═══ */
+.workshop-item{padding:10px 12px}
+.workshop-item .wi-meta{display:flex;align-items:center;gap:8px;margin-top:4px}
+.workshop-item .wi-author{font-size:10px;color:var(--blue);background:var(--blue-bg);padding:1px 6px;border-radius:4px}
+.workshop-item .wi-date{font-size:10px;color:var(--faint)}
+.workshop-item .wi-desc{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;white-space:pre-wrap}
+.workshop-item .wi-actions{display:flex;gap:4px;margin-top:6px}
+.wi-btn{padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--font);cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text);transition:.15s}
+.wi-btn:hover{opacity:.85}
+.wi-btn-apply{border-color:var(--green-border);color:var(--green);background:var(--green-bg)}
+.wi-btn-add{border-color:var(--blue-border);color:var(--blue);background:var(--blue-bg)}
+.wi-btn-del{border-color:var(--red-border);color:var(--red);background:var(--red-bg)}
 

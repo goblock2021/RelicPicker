@@ -88,11 +88,20 @@ class RelicMatch:
 @dataclass
 class BoxItem:
     """A saved relic configuration in the relic box."""
-    effects: list[dict]      # [{eff_id, variant?, curse_id}, ...]
+    id: int                      # unique ID, never reused
+    effects: list[dict]          # [{eff_id, curse_id}, ...]
     shop: str
     color: int
     added_at: str
     relic_id: int = 0
+
+
+@dataclass
+class BoxFolder:
+    """A named collection — references item IDs."""
+    name: str
+    item_ids: list[int]
+    added_at: str
 
 
 @dataclass

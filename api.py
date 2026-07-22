@@ -21,7 +21,7 @@ def _app_dir() -> str:
 
 log = logging.getLogger("relicpicker")
 
-BOX_VERSION = 1  # Current format version of relic_box.json
+BOX_VERSION = 2  # Current format version of relic_box.json
 
 def _pkg_path(filename: str) -> str:
     """Return path to a packaged resource file."""
@@ -33,7 +33,13 @@ def _pkg_path(filename: str) -> str:
 from client import SmithboxClient
 from loader import Loader, SHOPS, SHOP_POOLS
 from matcher import Matcher
-from models import EffectVariant, BoxItem
+from models import EffectVariant, BoxItem, BoxFolder
+from workshop import (
+    WorkshopError, WorkshopAuthError, WorkshopRateLimitError,
+    fetch_all_submissions, share_submission, delete_submission,
+    validate_token, invalidate_cache,
+    start_device_flow, poll_device_token,
+)
 
 SHOP_NAMES_CN = {"normal-old":"旧版普通","normal-new":"新版普通",
                  "deep-old":"旧版深夜","deep-new":"新版深夜"}
@@ -53,7 +59,10 @@ class RelicPickerAPI:
         self.effects: list[dict] = []   # [{eff_id, curse_id}, ...]
         self.selected_relic_id: int | None = None
         self.favorites: set[int] = set()
-        self.box: list[BoxItem] = []
+        self.box: list[BoxItem] = []          # flat list of all items
+        self.folders: list[BoxFolder] = []   # folders referencing item IDs
+        self._next_id: int = 0               # auto-increment ID counter
+        self._box_error: str = ""            # set when version > BOX_VERSION
 
         # O(1) lookup indexes (built after data load)
         self._eff_by_id: dict[int, list] = {}     # aeId → list of Effects
@@ -198,7 +207,11 @@ class RelicPickerAPI:
             "effects": enriched,
             "favorites": list(self.favorites),
             "matches": self._serialize_matches(matches),
-            "box_count": len(self.box),
+            "box_count": sum(
+                len(b.items) if isinstance(b, BoxFolder) else 1
+                for b in self.box
+            ),
+            "box_error": self._box_error,
             "status": status,
             "status_message": status_msg,
             "connected": self._client is not None,
@@ -609,14 +622,108 @@ class RelicPickerAPI:
     # ── Relic Box ────────────────────────────────────────────────────
 
     def _compute_box_cache(self):
-        """Build the serialized box cache (called after connect or batch import)."""
-        self._box_cache = [self._serialize_box_item(b) for b in self.box]
+        """Build serialized output: items with folder info, plus folders list."""
+        items_out = []
+        for b in self.box:
+            d = self._serialize_box_item(b)
+            # Find which folder this item belongs to
+            d["folder_idx"] = None
+            for fi, f in enumerate(self.folders):
+                if b.id in f.item_ids:
+                    d["folder_idx"] = fi
+                    break
+            items_out.append(d)
 
-    def get_box(self) -> list[dict]:
+        folders_out = []
+        for f in self.folders:
+            folders_out.append({
+                "name": f.name,
+                "added_at": f.added_at,
+                "item_ids": list(f.item_ids),
+                "_idx": self.folders.index(f),
+            })
+
+        self._box_cache = {"items": items_out, "folders": folders_out}
+
+    def get_box(self) -> dict:
         if self._box_cache is None:
-            # self._preload_box_relics()  # disabled with illegal check
             self._compute_box_cache()
-        return self._box_cache
+        return {
+            "items": self._box_cache["items"],
+            "folders": self._box_cache["folders"],
+            "count": len(self.box),
+            "error": self._box_error,
+        }
+
+    # ── Folder Operations ──────────────────────────────────────────
+
+    def _find_item_idx(self, item_id: int):
+        for i, b in enumerate(self.box):
+            if b.id == item_id:
+                return i
+        return None
+
+    def _find_folder_idx(self, item_id: int):
+        for fi, f in enumerate(self.folders):
+            if item_id in f.item_ids:
+                return fi
+        return None
+
+    def create_folder(self, name: str) -> dict:
+        if not name.strip():
+            return {"success": False, "message": "文件夹名不能为空"}
+        self.folders.append(BoxFolder(
+            name=name.strip(),
+            item_ids=[],
+            added_at=datetime.now().strftime("%Y/%m/%d"),
+        ))
+        self._save_box()
+        self._box_cache = None
+        return {"success": True, "message": f"已创建文件夹「{name}」"}
+
+    def rename_folder(self, index: int, name: str) -> dict:
+        if not name.strip():
+            return {"success": False, "message": "文件夹名不能为空"}
+        if not (0 <= index < len(self.folders)):
+            return {"success": False, "message": "无效的文件夹"}
+        self.folders[index].name = name.strip()
+        self._save_box()
+        self._box_cache = None
+        return {"success": True, "message": f"已重命名为「{name}」"}
+
+    def delete_folder(self, index: int) -> dict:
+        if not (0 <= index < len(self.folders)):
+            return {"success": False, "message": "无效的文件夹"}
+        name = self.folders[index].name
+        count = len(self.folders[index].item_ids)
+        self.folders.pop(index)
+        self._save_box()
+        self._box_cache = None
+        return {"success": True, "message": f"已删除文件夹「{name}」，{count} 个遗物散落"}
+
+    def move_to_folder(self, item_id: int, folder_index: int) -> dict:
+        old_fi = self._find_folder_idx(item_id)
+        if old_fi is not None:
+            self.folders[old_fi].item_ids.remove(item_id)
+        if not (0 <= folder_index < len(self.folders)):
+            return {"success": False, "message": "无效的文件夹"}
+        if item_id not in self.folders[folder_index].item_ids:
+            self.folders[folder_index].item_ids.append(item_id)
+        self._save_box()
+        self._box_cache = None
+        return {"success": True, "message": f"已移入「{self.folders[folder_index].name}」"}
+
+    def move_item(self, from_idx: int, from_sub, to_folder_idx: int) -> dict:
+        return {"success": False, "message": "请使用 move_to_folder"}
+
+    def remove_from_folder(self, item_id: int) -> dict:
+        fi = self._find_folder_idx(item_id)
+        if fi is not None:
+            self.folders[fi].item_ids.remove(item_id)
+            self._save_box()
+            self._box_cache = None
+            return {"success": True, "message": "已移出文件夹"}
+        return {"success": False, "message": "不在任何文件夹中"}
 
     def _preload_box_relics(self):
         """Batch-load all non-cached relic data needed by box items."""
@@ -636,36 +743,24 @@ class RelicPickerAPI:
         self._build_indexes()
         log.info("预加载完成")
 
-    def add_to_box(self) -> dict:
-        """Save current effects to relic box."""
+    def add_to_box(self, folder_index: int | None = None) -> dict:
+        """Save current effects. folder_index = target folder in self.folders list."""
         match = self._get_selected_match()
         relic_id = match.relic.id if match else 0
-
-        # Resolve shop: validate against relic's actual shop, or auto-detect
         if relic_id != 0 and self._loader:
             actual_shops = self._loader.shops_for_relic(relic_id)
-            if actual_shops:
-                if self.shop not in actual_shops:
-                    shop_names = [SHOP_NAMES_CN.get(s, s) for s in actual_shops]
-                    return {"success": False,
-                            "message": f"商店不匹配：该遗物属于 {' / '.join(shop_names)}，"
-                                       f"请切换到对应商店后再添加"}
-            else:
-                # Relic not in any known shop — still allow, tag as unknown
-                pass
+            if actual_shops and self.shop not in actual_shops:
+                shop_names = [SHOP_NAMES_CN.get(s, s) for s in actual_shops]
+                return {"success": False,
+                        "message": f"商店不匹配：该遗物属于 {' / '.join(shop_names)}，请切换到对应商店后再添加"}
         resolved_shop = self.shop
         if relic_id == 0:
             resolved_shop = self._resolve_shop_for_effects(self.effects, self.color)
 
-        dup = any(
-            b.effects == self.effects and b.shop == resolved_shop
-            and b.color == self.color and b.relic_id == relic_id
-            for b in self.box
-        )
-        if dup:
-            return {"success": False, "message": "已在遗物盒中"}
-
+        item_id = self._next_id
+        self._next_id += 1
         item = BoxItem(
+            id=item_id,
             effects=self.effects.copy(),
             shop=resolved_shop,
             color=self.color,
@@ -673,26 +768,35 @@ class RelicPickerAPI:
             relic_id=relic_id,
         )
         self.box.append(item)
+
+        if folder_index is not None and 0 <= folder_index < len(self.folders):
+            self.folders[folder_index].item_ids.append(item_id)
+
         self._save_box()
-
-        # Incremental cache update
-        if self._box_cache is not None:
-            self._box_cache.append(self._serialize_box_item(item))
-
+        self._box_cache = None
         state = self.get_state()
         state["message"] = "已加入遗物盒"
         return state
 
-    def remove_from_box(self, index: int) -> dict:
-        if 0 <= index < len(self.box):
-            self.box.pop(index)
-            self._save_box()
-            if self._box_cache is not None and index < len(self._box_cache):
-                self._box_cache.pop(index)
+    def remove_from_box(self, item_id: int) -> dict:
+        """Remove by item ID. Also removes from any folder."""
+        # Remove from folder first
+        for f in self.folders:
+            if item_id in f.item_ids:
+                f.item_ids.remove(item_id)
+        # Remove from box
+        for i, b in enumerate(self.box):
+            if b.id == item_id:
+                self.box.pop(i)
+                break
+        self._save_box()
+        self._box_cache = None
         return self.get_state()
 
-    def import_box(self, text: str) -> dict:
-        """Import from v4 share-format: RELIC_ID:ae1,ae2:cae1,cae2."""
+
+    def import_box(self, text: str, folder_index: int | None = None) -> dict:
+        """Import from v4 share-format: RELIC_ID:ae1,ae2:cae1,cae2.
+        If folder_index is given, imports into that folder."""
         count = 0
         skipped = 0
         for line in text.splitlines():
@@ -765,7 +869,6 @@ class RelicPickerAPI:
                     if r is not None:
                         detected_color = r.color
 
-            # Check for duplicate (same four fields as add_to_box)
             dup = any(
                 b.effects == effects and b.shop == detected_shop
                 and b.color == detected_color and b.relic_id == detected_relic_id
@@ -775,13 +878,20 @@ class RelicPickerAPI:
                 skipped += 1
                 continue
 
-            self.box.append(BoxItem(
+            item_id = self._next_id
+            self._next_id += 1
+            new_item = BoxItem(
+                id=item_id,
                 effects=effects,
                 shop=detected_shop,
                 color=detected_color,
                 added_at=datetime.now().strftime("%Y/%m/%d"),
                 relic_id=detected_relic_id,
-            ))
+            )
+            self.box.append(new_item)
+
+            if folder_index is not None and 0 <= folder_index < len(self.folders):
+                self.folders[folder_index].item_ids.append(item_id)
             count += 1
 
         self._save_box()
@@ -795,14 +905,23 @@ class RelicPickerAPI:
 
     def export_box(self, indices: list[int] = None) -> dict:
         """Export in v4 share-format: # comments + RELIC_ID:aeIds:caeIds.
-        If indices is given, export only those box items; otherwise export all."""
-        items = []
+        If indices is given, export only those box items; otherwise export all.
+        Folder items are exported as flat entries."""
+        flat_items: list[BoxItem] = []
         if indices:
             for i in indices:
                 if 0 <= i < len(self.box):
-                    items.append(self.box[i])
+                    b = self.box[i]
+                    if isinstance(b, BoxFolder):
+                        flat_items.extend(b.items)
+                    else:
+                        flat_items.append(b)
         else:
-            items = list(self.box)
+            for b in self.box:
+                if isinstance(b, BoxFolder):
+                    flat_items.extend(b.items)
+                else:
+                    flat_items.append(b)
 
         lines = []
         lines.append("# RelicBox")
@@ -814,24 +933,21 @@ class RelicPickerAPI:
         saved_shop = self.shop
         saved_color = self.color
 
-        for b in items:
-            # Use stored relic_id, fallback to matching
-            relic_id = b.relic_id if b.relic_id else 0
+        for item in flat_items:
+            relic_id = item.relic_id if item.relic_id else 0
             if not relic_id:
-                # Fallback: try to match
-                self.shop = b.shop
-                self.color = b.color
-                self.effects = b.effects.copy()
+                self.shop = item.shop
+                self.color = item.color
+                self.effects = item.effects.copy()
                 matches = self._match()
                 relic_id = matches[0].relic.id if matches else 0
 
-            # Annotate with relic name
             if self._loader:
                 r = self._loader.get_relic(relic_id)
                 if r:
                     lines.append(f"# 遗物: [{relic_id}] {r.name}")
 
-            for e in b.effects:
+            for e in item.effects:
                 eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
                 name = eff.name if eff else f"aeId={e['eff_id']}"
                 if e.get("curse_id"):
@@ -841,9 +957,9 @@ class RelicPickerAPI:
                 else:
                     lines.append(f"# {name}")
 
-            eff_ids = ",".join(str(e["eff_id"]) for e in b.effects)
+            eff_ids = ",".join(str(e["eff_id"]) for e in item.effects)
             curse_ids = ",".join(
-                str(e["curse_id"]) for e in b.effects if e.get("curse_id")
+                str(e["curse_id"]) for e in item.effects if e.get("curse_id")
             )
             if curse_ids:
                 lines.append(f"{relic_id}:{eff_ids}:{curse_ids}")
@@ -851,7 +967,6 @@ class RelicPickerAPI:
                 lines.append(f"{relic_id}:{eff_ids}")
             lines.append("#")
 
-        # Restore state
         self.effects = saved_effects
         self.shop = saved_shop
         self.color = saved_color
@@ -907,14 +1022,21 @@ class RelicPickerAPI:
             return {"saved": False, "message": str(e)}
 
     def get_settings(self) -> dict:
-        """Return user settings from disk."""
+        """Return user settings from disk. Token is masked."""
         path = os.path.join(_app_dir(), "settings.json")
         try:
             if os.path.exists(path):
-                return json.load(open(path, encoding="utf-8"))
+                settings = json.load(open(path, encoding="utf-8"))
+                # Mask token — only reveal whether it's configured
+                if settings.get("github_token"):
+                    settings["github_token_configured"] = True
+                    settings["github_token"] = ""
+                else:
+                    settings["github_token_configured"] = False
+                return settings
         except Exception:
             pass
-        return {"theme": "dark"}
+        return {"theme": "dark", "github_token_configured": False}
 
     def save_settings(self, settings: dict) -> dict:
         """Save user settings to disk (merges with existing)."""
@@ -954,19 +1076,207 @@ class RelicPickerAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def batch_apply(self, indices: list[int] = None) -> dict:
-        """Apply box items by index. If indices is None, apply all.
-        Each item uses its own shop from the box data."""
+    # ── Workshop ────────────────────────────────────────────────────
+
+    def _get_token(self) -> str:
+        """Read github_token from settings.json."""
+        path = os.path.join(_app_dir(), "settings.json")
+        try:
+            if os.path.exists(path):
+                config = json.load(open(path, encoding="utf-8"))
+                return config.get("github_token", "")
+        except Exception:
+            pass
+        return ""
+
+    def workshop_list(self) -> dict:
+        """Browse all workshop submissions (anonymous, no token needed)."""
+        try:
+            subs = fetch_all_submissions()
+            return {"submissions": subs}
+        except WorkshopRateLimitError as e:
+            log.warning("Workshop rate limited: %s", e)
+            return {"error": "GitHub API 请求过于频繁，请稍后再试"}
+        except WorkshopError as e:
+            log.error("Workshop list failed: %s", e)
+            return {"error": str(e)}
+
+    def workshop_share(self, title: str, description: str) -> dict:
+        """Share current effects config to workshop. Requires github_token."""
+        token = self._get_token()
+        if not token:
+            return {"error": "请先在设置中配置 GitHub Token"}
+
+        # Get effect/curse names from current state
+        effect_names = []
+        curse_names = []
+        for e in self.effects:
+            eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
+            effect_names.append(eff.name if eff else f"?{e['eff_id']}")
+            if e.get("curse_id"):
+                curse = self._loader.get_curse(e["curse_id"]) if self._loader else None
+                curse_names.append(curse.name if curse else f"?{e['curse_id']}")
+
+        # Get relic info
+        match = self._get_selected_match()
+        relic_id = match.relic.id if match else 0
+        relic_name = match.relic.name if match else ""
+
+        data = {
+            "title": title,
+            "description": description,
+            "effects": self.effects.copy(),
+            "shop": self.shop,
+            "color": self.color,
+            "relic_id": relic_id,
+            "effect_names": effect_names,
+            "curse_names": curse_names,
+            "relic_name": relic_name,
+        }
+
+        try:
+            result = share_submission(token, data)
+            # Invalidate the workshop cache in api layer too
+            invalidate_cache()
+            return {"success": True, **result}
+        except WorkshopAuthError as e:
+            return {"error": f"GitHub Token 无效: {e}"}
+        except WorkshopError as e:
+            return {"error": str(e)}
+
+    def workshop_share_box(self, index: int, title: str, description: str) -> dict:
+        """Share a box item to workshop. Requires github_token."""
+        token = self._get_token()
+        if not token:
+            return {"error": "请先在设置中配置 GitHub Token"}
+
+        if not (0 <= index < len(self.box)):
+            return {"error": "无效的条目"}
+
+        b = self.box[index]
+
+        # Resolve names
+        effect_names = []
+        curse_names = []
+        for e in b.effects:
+            eff = self._loader.get_effect(e["eff_id"]) if self._loader else None
+            effect_names.append(eff.name if eff else f"?{e['eff_id']}")
+            if e.get("curse_id"):
+                curse = self._loader.get_curse(e["curse_id"]) if self._loader else None
+                curse_names.append(curse.name if curse else f"?{e['curse_id']}")
+
+        relic_name = ""
+        if b.relic_id and self._loader:
+            r = self._loader.get_relic(b.relic_id)
+            if r:
+                relic_name = r.name
+            else:
+                relic_name = self._loader.lookup_relic_name(b.relic_id) or ""
+
+        data = {
+            "title": title,
+            "description": description,
+            "effects": b.effects,
+            "shop": b.shop,
+            "color": b.color,
+            "relic_id": b.relic_id,
+            "effect_names": effect_names,
+            "curse_names": curse_names,
+            "relic_name": relic_name,
+        }
+
+        try:
+            result = share_submission(token, data)
+            invalidate_cache()
+            return {"success": True, **result}
+        except WorkshopAuthError as e:
+            return {"error": f"GitHub Token 无效: {e}"}
+        except WorkshopError as e:
+            return {"error": str(e)}
+
+    def workshop_delete(self, submission_id: str) -> dict:
+        """Delete own submission from workshop. Requires github_token."""
+        token = self._get_token()
+        if not token:
+            return {"error": "请先在设置中配置 GitHub Token"}
+
+        try:
+            result = delete_submission(token, submission_id)
+            invalidate_cache()
+            return {"success": True, **result}
+        except WorkshopAuthError as e:
+            return {"error": f"GitHub Token 无效: {e}"}
+        except WorkshopError as e:
+            return {"error": str(e)}
+
+    def workshop_validate_token(self, token: str = "") -> dict:
+        """Validate a GitHub token and return the username."""
+        t = token or self._get_token()
+        if not t:
+            return {"valid": False, "error": "未提供 Token"}
+
+        try:
+            username = validate_token(t)
+            return {"valid": True, "username": username}
+        except WorkshopAuthError as e:
+            return {"valid": False, "error": str(e)}
+        except WorkshopError as e:
+            return {"valid": False, "error": str(e)}
+
+    def workshop_start_auth(self) -> dict:
+        """Start OAuth Device Flow. Returns user_code + verification_uri."""
+        try:
+            flow = start_device_flow()
+            return {"success": True, **flow}
+        except WorkshopError as e:
+            return {"error": str(e)}
+
+    def workshop_poll_auth(self, device_code: str) -> dict:
+        """Poll for OAuth token completion."""
+        try:
+            result = poll_device_token(device_code)
+            if "access_token" in result:
+                # Save token
+                path = os.path.join(_app_dir(), "settings.json")
+                settings = {}
+                if os.path.exists(path):
+                    try:
+                        settings = json.load(open(path, encoding="utf-8"))
+                    except Exception:
+                        pass
+                settings["github_token"] = result["access_token"]
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(settings, f, ensure_ascii=False, indent=2)
+
+                # Get username
+                username = validate_token(result["access_token"])
+                return {"complete": True, "username": username}
+            elif result.get("error") == "authorization_pending":
+                return {"complete": False}
+            else:
+                return {"error": result.get("error", "授权失败")}
+        except WorkshopError as e:
+            return {"error": str(e)}
+
+    def batch_apply(self, item_ids: list[int] = None) -> dict:
+        """Apply box items by item ID. If None, apply all."""
         if not self._client:
             return {"success": False, "message": "未连接到 Smithbox"}
 
-        items = []
-        if indices:
-            for i in indices:
-                if 0 <= i < len(self.box):
-                    items.append((i, self.box[i]))
+        flat_items: list[tuple] = []
+        if item_ids:
+            for iid in item_ids:
+                try: iid = int(iid)
+                except: continue
+                for b in self.box:
+                    if b.id == iid:
+                        flat_items.append((str(iid), b))
+                        break
         else:
-            items = list(enumerate(self.box))
+            for b in self.box:
+                flat_items.append((str(b.id), b))
+
+        items = flat_items
 
         SHOP_NAMES = SHOP_NAMES_CN
 
@@ -991,7 +1301,7 @@ class RelicPickerAPI:
                 try:
                     matches = self._match()
                     match_ids = [(m.relic.id, m.relic.name) for m in matches]
-                    log.info("batch_apply[%d]: relic_id=%d, shop=%s, color=%d, "
+                    log.info("batch_apply[%s]: relic_id=%d, shop=%s, color=%d, "
                              "matches=%s",
                              idx, item.relic_id, shop, self.color, match_ids)
 
@@ -1006,14 +1316,14 @@ class RelicPickerAPI:
                                     found = True
                                     break
                             if not found:
-                                log.warning("batch_apply[%d]: relic_id=%d not in matches %s",
+                                log.warning("batch_apply[%s]: relic_id=%d not in matches %s",
                                             idx, item.relic_id,
                                             [m.relic.id for m in matches])
                                 results.append({"ok": False, "name": "?",
                                     "error": f"找不到有效的遗物 (ID={item.relic_id})",
                                     "shop": shop_name, "idx": idx})
                                 continue
-                            log.info("batch_apply[%d]: matched by relic_id=%d", idx, item.relic_id)
+                            log.info("batch_apply[%s]: matched by relic_id=%d", idx, item.relic_id)
                         relic = match.relic
                         if self._check_effects_vs_relic(relic, self.effects):
                             results.append({"ok": False, "name": relic.name,
@@ -1363,6 +1673,7 @@ class RelicPickerAPI:
             relic_name = ""
 
         return {
+            "id": b.id,
             "effects": b.effects,
             "effect_names": effect_names,
             "curse_names": curse_names,
@@ -1381,42 +1692,76 @@ class RelicPickerAPI:
                 raw = json.load(open(self._box_file, encoding="utf-8"))
             except (json.JSONDecodeError, KeyError):
                 self.box = []
+                self.folders = []
                 return
 
             # V0 format: bare array (no version wrapper)
             if isinstance(raw, list):
-                items = raw
-                version = 0
+                raw = {"version": 0, "items": raw}
+
+            version = raw.get("version", 1)
+
+            # ── Version too high → refuse to load ──
+            if version > BOX_VERSION:
+                self._box_error = f"遗物盒数据格式过新 (v{version})，请升级 RelicPicker。"
+                self.box = []
+                self.folders = []
+                return
+
+            self._box_error = ""
+
+            # ── Parse: v1 = old format, v2 = ID-based format ──
+            if version < 2:
+                # v0/v1: flat items array, no IDs, no folders
+                items_raw = raw if isinstance(raw, list) else raw.get("items", [])
+                self.box = []
+                for i, item in enumerate(items_raw):
+                    self.box.append(BoxItem(
+                        id=i,
+                        effects=item["effects"],
+                        shop=item.get("shop", "normal-old"),
+                        color=item.get("color", -1),
+                        added_at=item.get("added_at", ""),
+                        relic_id=item.get("relic_id", 0),
+                    ))
+                self._next_id = len(self.box)
+                self.folders = []
             else:
-                version = raw.get("version", 1)
-                items = raw.get("items", [])
+                # v2: {version, next_id, items: [{id,...},...], folders: [{name,item_ids,...},...]}
+                self._next_id = raw.get("next_id", 0)
+                self.box = []
+                for item in raw.get("items", []):
+                    self.box.append(BoxItem(
+                        id=item["id"],
+                        effects=item["effects"],
+                        shop=item.get("shop", "normal-old"),
+                        color=item.get("color", -1),
+                        added_at=item.get("added_at", ""),
+                        relic_id=item.get("relic_id", 0),
+                    ))
+                self.folders = []
+                for f in raw.get("folders", []):
+                    self.folders.append(BoxFolder(
+                        name=f.get("name", ""),
+                        item_ids=f.get("item_ids", []),
+                        added_at=f.get("added_at", ""),
+                    ))
 
-            # Apply migrations by version
-            # if version < 2:
-            #     items = [self._migrate_item_v2(item) for item in items]
-
-            self.box = [
-                BoxItem(
-                    effects=item["effects"],
-                    shop=item.get("shop", "normal-old"),
-                    color=item.get("color", -1),
-                    added_at=item.get("added_at", ""),
-                    relic_id=item.get("relic_id", 0),
-                )
-                for item in items
-            ]
-
-            # Auto-upgrade V0 -> V1 on first load
+            # Auto-upgrade if version behind
             if version < BOX_VERSION:
                 self._save_box()
         else:
             self.box = []
+            self.folders = []
+            self._next_id = 0
 
     def _save_box(self):
         data = {
             "version": BOX_VERSION,
+            "next_id": self._next_id,
             "items": [
                 {
+                    "id": b.id,
                     "effects": b.effects,
                     "shop": b.shop,
                     "color": b.color,
@@ -1424,6 +1769,14 @@ class RelicPickerAPI:
                     "relic_id": b.relic_id,
                 }
                 for b in self.box
+            ],
+            "folders": [
+                {
+                    "name": f.name,
+                    "item_ids": f.item_ids,
+                    "added_at": f.added_at,
+                }
+                for f in self.folders
             ],
         }
         with open(self._box_file, "w", encoding="utf-8") as f:

@@ -25,6 +25,8 @@
     <g id="icon-sun"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/><line x1="4.2" y1="19.8" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.8" y2="4.2"/></g></g>
     <g id="icon-moon"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></g>
     <g id="icon-help"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></g>
+    <g id="icon-globe"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></g>
+    <g id="icon-edit"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></g>
   </defs>
 </svg>
 
@@ -107,8 +109,12 @@
     <button class="theme-btn" onclick="Tour.start()" title="使用教程" style="margin-right:6px">
       <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-help"/></svg>
     </button>
+    <button class="box-btn" onclick="Actions.toggleWorkshop()" style="margin-right:6px">
+      <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:4px"><use href="#icon-globe"/></svg>
+      创意工坊
+    </button>
     <button class="box-btn" onclick="Actions.toggleBox()">
-      <span class="box-btn-dot"></span> 遗物盒 <span id="box-badge">0</span>
+      <svg viewBox="0 0 24 24" width="12" height="12"><use href="#icon-box"/></svg> 遗物盒 <span id="box-badge">0</span>
     </button>
   </div>
 
@@ -203,8 +209,8 @@
 </div>
 
 <!-- BOX DRAWER -->
-<div id="box-overlay">
-  <div id="box-drawer">
+<div id="box-overlay" class="drawer-overlay">
+  <div id="box-drawer" class="drawer-panel">
     <div class="dh">
 	  <div class="dh-left">
 		  <h2>
@@ -220,6 +226,9 @@
     <div class="box-toolbar">
       <input type="text" id="box-search" placeholder="搜索遗物盒..." oninput="Render.box()" autocomplete="off">
       <span style="flex:1"></span>
+      <button onclick="Actions.createFolder()" title="新建文件夹">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-add"/></svg>
+      </button>
       <button onclick="Actions.importBox()" title="导入">
         <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-download"/></svg>
       </button>
@@ -237,6 +246,36 @@
     <div class="dl" id="drawer-list"><div class="box-empty">遗物盒是空的</div></div>
   </div>
   <div class="backdrop" onclick="Actions.toggleBox()"></div>
+</div>
+
+<!-- WORKSHOP DRAWER -->
+<div id="workshop-overlay" class="drawer-overlay">
+  <div id="workshop-drawer" class="drawer-panel">
+    <div class="dh">
+      <div class="dh-left">
+        <h2>
+          <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:4px"><use href="#icon-globe"/></svg>
+          创意工坊
+        </h2>
+        <span class="dh-count" id="workshop-count">0</span>
+      </div>
+      <button onclick="Actions.toggleWorkshop()" class="icon-btn">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-close"/></svg>
+      </button>
+    </div>
+    <div class="box-toolbar">
+      <input type="text" id="workshop-search" placeholder="搜索工坊..." oninput="Render.workshop()" autocomplete="off">
+      <span style="flex:1"></span>
+      <button onclick="Workshop.load()" title="刷新">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-refresh"/></svg>
+      </button>
+      <button onclick="Workshop.showShareModal()" title="分享当前配置" style="color:var(--green)">
+        <svg viewBox="0 0 24 24" width="14" height="14"><use href="#icon-upload"/></svg>
+      </button>
+    </div>
+    <div class="dl" id="workshop-list"><div class="box-empty">正在加载...</div></div>
+  </div>
+  <div class="backdrop" onclick="Actions.toggleWorkshop()"></div>
 </div>
 
 <!-- ONBOARDING TOUR -->
