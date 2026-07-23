@@ -457,7 +457,7 @@ const Render = {
 
   workshopError(msg) {
     const list = document.getElementById('workshop-list');
-    list.innerHTML = `<div class="box-empty" style="color:var(--red)">${msg}</div>`;
+    list.innerHTML = `<div class="box-empty" style="color:var(--red)">${Render.esc(msg)}</div>`;
   },
 
   workshop() {
@@ -478,16 +478,16 @@ const Render = {
     for (const s of items) {
       const isOwn = State.workshopUsername && s.author && s.author.toLowerCase() === State.workshopUsername.toLowerCase();
       const count = s.relic_count || (s.relics||[]).length || 0;
-      html += `<div class="box-item workshop-item" onclick="Actions.showWorkshopDetail('${s.id}')">
+      html += `<div class="box-item workshop-item" onclick="Actions.showWorkshopDetail('${Render.esc(s.id)}')">
         <span class="bi-dot"><svg viewBox="0 0 24 24" width="12" height="12" style="color:var(--gold)"><use href="#icon-box"/></svg></span>
         <div class="bi-main">
-          <div class="bi-line" style="font-weight:600;color:var(--text)">${s.title||'未命名'} <span style="font-weight:400;color:var(--faint);font-size:11px">${count}个遗物</span></div>
-          ${s.description ? `<div class="wi-desc">${s.description}</div>` : ''}
-          <div class="wi-meta"><span class="wi-author">${s.author||'匿名'}</span><span class="wi-date">${(s.created_at||'').slice(0,10)}</span></div>
+          <div class="bi-line" style="font-weight:600;color:var(--text)">${Render.esc(s.title||'未命名')} <span style="font-weight:400;color:var(--faint);font-size:11px">${count}个遗物</span></div>
+          ${s.description ? `<div class="wi-desc">${Render.esc(s.description)}</div>` : ''}
+          <div class="wi-meta"><span class="wi-author">${Render.esc(s.author||'匿名')}</span><span class="wi-date">${(s.created_at||'').slice(0,10)}</span></div>
         </div>
         <div class="wi-actions">
-          <button class="wi-btn wi-btn-add" onclick="event.stopPropagation();Actions.addWorkshopToBox('${s.id}')">加入遗物盒</button>
-          ${isOwn ? `<button class="wi-btn wi-btn-del" onclick="event.stopPropagation();Actions.deleteWorkshopSubmission('${s.id}')">删除</button>` : ''}
+          <button class="wi-btn wi-btn-add" onclick="event.stopPropagation();Actions.addWorkshopToBox('${Render.esc(s.id)}')">加入遗物盒</button>
+          ${isOwn ? `<button class="wi-btn wi-btn-del" onclick="event.stopPropagation();Actions.deleteWorkshopSubmission('${Render.esc(s.id)}')">删除</button>` : ''}
         </div>
       </div>`;
     }
@@ -1604,7 +1604,7 @@ const Workshop = {
       }
 
       // Open browser to verification page
-      const authUrl = `${flow.verification_uri}?user_code=${flow.user_code}`;
+      const authUrl = flow.verification_uri;
       try { API.call('open_url', authUrl); } catch (e) { /* ignore */ }
 
       // Show user_code + polling state
@@ -1619,7 +1619,7 @@ const Workshop = {
           <a onclick="try{API.call('open_url','${authUrl}')}catch(e){}" style="display:block;color:var(--blue);cursor:pointer;font-size:12px;margin-bottom:4px">${authUrl}</a>
           <div style="background:var(--bg);border:2px dashed var(--gold);border-radius:8px;padding:12px;margin:8px 0">
             <div style="font-size:10px;color:var(--faint);margin-bottom:4px">输入此验证码</div>
-            <div style="font-size:22px;font-weight:700;letter-spacing:4px;color:var(--gold)">${flow.user_code}</div>
+            <div style="font-size:22px;font-weight:700;letter-spacing:4px;color:var(--gold);cursor:pointer" onclick="const t=document.createElement('textarea');t.value='${flow.user_code}';t.style.position='fixed';t.style.left='-9999px';document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);Toast.show('验证码已复制')" title="点击复制验证码">${flow.user_code}</div>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:12px">等待授权中...</div>
           <div class="confirm-actions" style="justify-content:center">
