@@ -336,8 +336,7 @@ const Render = {
     const selCls = sel.has(b.id) ? ' selected' : '';
     const effectLines = (b.effect_names||[]).map(n => `<div class="bi-line">${n}</div>`).join('');
     const curseLines = (b.curse_names||[]).map(n => `<div class="bi-line curse">诅咒: ${n}</div>`).join('');
-    return `<div class="box-item${selCls}" data-id="${b.id}" data-folder="${folderIdx !== null ? folderIdx : ''}"
-             ondblclick="Render.loadBoxItemId(${b.id})">
+    return `<div class="box-item${selCls}" data-id="${b.id}" data-folder="${folderIdx !== null ? folderIdx : ''}">
       <span class="bi-dot"><span class="color-dot dot-${b.color>=0?b.color:2}"></span></span>
       <div class="bi-main">
         ${b.relic_name ? `<div class="bi-line" style="color:var(--gold)">[${b.relic_id}] ${b.relic_name}${b.relic_shop === false ? ' <span class="bi-tag tag-not-for-sale">非卖</span>' : ''}${b.is_illegal ? ' <span class="bi-tag tag-illegal">非法</span>' : ''}</div>` : ''}
@@ -369,7 +368,9 @@ const Render = {
     if (this._dragInited) return;
     this._dragInited = true;
 
-    const THRESHOLD = 8;
+    const THRESHOLD = 20;
+    const CLICK_TIME = 200;   // mouseup within 200ms → click even if slightly moved
+    const CLICK_DIST = 25;    // max distance for fast click override
     let drag = null;
     let lastClick = { time: 0, idx: -1, sub: undefined };
 
@@ -386,8 +387,9 @@ const Render = {
     document.addEventListener('mousemove', (e) => {
       if (!drag) return;
       if (!drag.moved) {
-        if (Math.abs(e.clientX - drag.startX) < THRESHOLD &&
-            Math.abs(e.clientY - drag.startY) < THRESHOLD) return;
+        const dx = Math.abs(e.clientX - drag.startX);
+        const dy = Math.abs(e.clientY - drag.startY);
+        if (dx < THRESHOLD && dy < THRESHOLD) return;
         drag.moved = true;
         drag.el.classList.add('dragging');
         const ghost = document.createElement('div');
@@ -406,14 +408,23 @@ const Render = {
       if (!drag) return;
       drag.el.classList.remove('dragging');
       if (drag.ghost) { drag.ghost.remove(); drag.ghost = null; }
+      // Fast mouseup with minor movement → treat as click, not drag
+      const dt = Date.now() - drag.time;
+      const dx = Math.abs(e.clientX - drag.startX);
+      const dy = Math.abs(e.clientY - drag.startY);
+      if (drag.moved && dt < CLICK_TIME && dx < CLICK_DIST && dy < CLICK_DIST) {
+        drag.moved = false;  // override: it's a click
+      }
       if (!drag.moved) {
         const idx = parseInt(drag.idx);
         const sub = drag.sub !== undefined ? parseInt(drag.sub) : undefined;
         // Double-click (< 400ms on same element)
         if (lastClick.id === drag.id && drag.time - lastClick.time < 400) {
           lastClick = { time: 0, id: -1 };
-          Render.loadBoxItemId(drag.id);
-          Actions.toggleBox();
+          try {
+            Actions.loadBoxItemId(drag.id);
+            Actions.toggleBox();
+          } catch (e) { console.error('[DRAG] dblclick error:', e); }
         } else {
           lastClick = { time: drag.time, id: drag.id };
           if (!isNaN(drag.id)) Render.toggleBoxSel(drag.id);
@@ -488,7 +499,12 @@ const Render = {
     const i = window._boxSel.indexOf(key);
     if (i >= 0) window._boxSel.splice(i, 1);
     else window._boxSel.push(key);
-    this.box();
+    // Toggle class directly instead of re-rendering the whole box.
+    // Re-rendering via this.box() destroys the DOM element via innerHTML,
+    // which resets the browser's native dblclick detection and prevents
+    // the ondblclick handler on box items from ever firing.
+    const el = document.querySelector(`.box-item[data-id="${key}"]`);
+    if (el) el.classList.toggle('selected');
   },
 
   async loadBoxItem(idx, event, subIdx) {
@@ -1042,13 +1058,14 @@ const Actions = {
     const indices = window._bpIndices;
     const cursor = window._bpCursor;
     const total = indices.length;
+    const itemById = (id) => State.boxItems.find(it => it.id === id);
     if (cursor >= total) {
       const results = window._bpResults;
       const ok = results.filter(r => r.ok).length;
       Modal.showRaw(`<div class="cm-title">批量应用 — 完成</div>
         <div class="batch-progress-wrap">
           ${indices.map((idx, i) => {
-            const b = State.boxItems[idx];
+            const b = itemById(idx);
             const r = results[i];
             const st = r ? (r.ok ? '✓' : '✗') : '?';
             const cl = r ? (r.ok ? 'var(--green)' : 'var(--red)') : 'var(--faint)';
@@ -1067,7 +1084,7 @@ const Actions = {
     }
 
     const idx = indices[cursor];
-    const b = State.boxItems[idx];
+    const b = itemById(idx);
     // Auto-apply on first visit
     const operating = !window._bpResults[cursor];
     if (operating) {
